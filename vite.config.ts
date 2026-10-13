@@ -37,6 +37,8 @@ export default defineConfig({
         ],
       },
       workbox: {
+        // Take control on first install so the AI models get cached during the very first session.
+        clientsClaim: true,
         globPatterns: ['**/*.{js,css,html,woff2,svg,png,webp}'],
         maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
         runtimeCaching: [
