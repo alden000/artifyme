@@ -1,11 +1,10 @@
 import { h, pickFile } from '../ui/dom';
 import { icons } from '../ui/icons';
 import { haptic, parallax, ripple, setAccent, tilt, toast } from '../ui/fx';
-import { MASTERS } from '../data/styles';
+import { MASTERS, REIMAGINE } from '../data/styles';
 import { go } from '../router';
 import { setMedia, setResult, state } from '../state';
 import { loadMedia } from '../media/load';
-import { MAX_VIDEO_SECONDS } from '../media/video';
 import { listCreations, type Creation } from '../store/gallery';
 import { openViewer } from './viewer';
 
@@ -16,9 +15,6 @@ export async function ingest(file: File | null) {
   document.getElementById('overlays')!.append(loader);
   try {
     const media = await loadMedia(file);
-    if (media.kind === 'video' && (media.duration ?? 0) > MAX_VIDEO_SECONDS + 0.5) {
-      toast(`We'll paint the first ${MAX_VIDEO_SECONDS} seconds of your video.`, { icon: icons.video, duration: 4200 });
-    }
     setMedia(media);
     setResult(null);
     await go('studio');
@@ -62,14 +58,6 @@ export default function home(root: HTMLElement) {
       h('span', { class: 'pick-txt' }, h('b', null, 'Photo'), h('small', null, 'From your library')),
     ),
   );
-  const videoBtn = ripple(
-    h(
-      'button',
-      { class: 'pick pick-video', onclick: async () => ingest(await pickFile('video/*')) },
-      h('span', { class: 'pick-ico', html: icons.video }),
-      h('span', { class: 'pick-txt' }, h('b', null, 'Video'), h('small', null, `Up to ${MAX_VIDEO_SECONDS} seconds`)),
-    ),
-  );
   const camBtn = ripple(
     h('button', { class: 'pick-cam', onclick: async () => ingest(await pickFile('image/*', 'environment')), 'aria-label': 'Take a photo' }, h('span', { html: icons.camera }), 'Capture a moment'),
   );
@@ -77,7 +65,7 @@ export default function home(root: HTMLElement) {
   const recentRow = h('div', { class: 'recent-row' });
   const recent = h('section', { class: 'recent', hidden: true }, h('div', { class: 'section-head' }, h('h2', null, 'Recent masterpieces'), h('button', { class: 'link', onclick: () => go('gallery') }, 'View all')), recentRow);
 
-  const names = ['Van Gogh', 'Hokusai', 'Klimt', 'Munch', 'Monet', 'Kandinsky', 'Mondrian', 'Seurat', 'Mucha', 'Rembrandt', 'Vermeer', 'Da Vinci', 'Blockcraft', '8‑Bit'];
+  const names = ['Van Gogh', 'Hokusai', 'Klimt', 'Munch', 'Monet', 'Kandinsky', 'Mondrian', 'Seurat', 'Mucha', 'Rembrandt', 'Vermeer', 'Da Vinci', 'Anime', 'Comic', 'Watercolour'];
   const marquee = h('div', { class: 'marquee', 'aria-hidden': 'true' }, h('div', { class: 'marquee-track' }, [...names, ...names].map((n) => h('span', null, n, h('i', null, '✦')))));
 
   root.append(
@@ -101,10 +89,10 @@ export default function home(root: HTMLElement) {
         { class: 'hero-copy' },
         h('p', { class: 'eyebrow' }, h('i', { class: 'dot' }), 'On‑device AI atelier'),
         h('h1', { class: 'display' }, 'Become the ', h('em', { class: 'shimmer' }, 'masterpiece'), '.'),
-        h('p', { class: 'lede' }, 'Repaint your photos and short videos in the hand of history’s greatest artists — rendered privately, right on your phone.'),
+        h('p', { class: 'lede' }, 'Have your photos redrawn in the hand of history’s greatest artists — rendered privately, right on your phone.'),
       ),
     ),
-    h('div', { class: 'picks' }, photoBtn, videoBtn),
+    h('div', { class: 'picks single' }, photoBtn),
     camBtn,
     h('p', { class: 'privacy' }, h('span', { html: icons.lock }), 'Nothing is uploaded. Every brushstroke happens on your device.'),
     marquee,
@@ -112,7 +100,7 @@ export default function home(root: HTMLElement) {
     h(
       'section',
       { class: 'showcase' },
-      h('div', { class: 'section-head' }, h('h2', null, 'The collection'), h('span', { class: 'muted' }, `${MASTERS.length + 3} styles`)),
+      h('div', { class: 'section-head' }, h('h2', null, 'The collection'), h('span', { class: 'muted' }, `${MASTERS.length + REIMAGINE.length} styles`)),
       h(
         'div',
         { class: 'showcase-grid' },
@@ -124,7 +112,7 @@ export default function home(root: HTMLElement) {
               style: `--accent:${s.accent}`,
               onclick: async () => {
                 state.styleId = s.id;
-                ingest(await pickFile('image/*,video/*'));
+                ingest(await pickFile('image/*'));
               },
             },
             h('img', { src: s.thumb, alt: s.name, loading: 'lazy', decoding: 'async' }),

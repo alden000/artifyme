@@ -1,53 +1,12 @@
 import { h } from '../ui/dom';
 import { icons } from '../ui/icons';
-import { haptic, toast } from '../ui/fx';
+import { toast } from '../ui/fx';
 import { back } from '../router';
-import { backendName, isModelLoaded, loadModel, MODEL_SIZES_MB, onModelProgress, type ModelKey } from '../ai/engine';
 import { canInstall, isStandalone, promptInstall } from '../pwa';
 import { MP_DOWNLOAD_MB, mpInstalled, mpRemove, mpSupport } from '../ai/masterpiece';
 import { ensureMpInstalled } from './mpflow';
 
-const MODEL_LABEL: Record<ModelKey, [string, string]> = {
-  fast: ['Swift painter', 'Live previews & video'],
-  hq: ['Studio painter', 'High‑fidelity stills'],
-  style: ['Style learner', 'Powers “Your Style”'],
-};
-
 export default function about(root: HTMLElement) {
-  const rows = (Object.keys(MODEL_LABEL) as ModelKey[]).map((k) => {
-    const bar = h('i', { class: 'mbar-fill', style: `--p:${isModelLoaded(k) ? 1 : 0}` });
-    const state = h('small', null, isModelLoaded(k) ? 'Ready offline' : `${MODEL_SIZES_MB[k]} MB`);
-    return { k, bar, state, el: h('div', { class: 'model-row' }, h('div', null, h('b', null, MODEL_LABEL[k][0]), h('small', null, MODEL_LABEL[k][1])), state, h('span', { class: 'mbar' }, bar)) };
-  });
-  const off = onModelProgress((k, p) => {
-    const r = rows.find((x) => x.k === k)!;
-    r.bar.style.setProperty('--p', String(p));
-    r.state.textContent = p >= 1 ? 'Ready offline' : `${Math.round(p * 100)}%`;
-  });
-  const dl = h(
-    'button',
-    {
-      class: 'ghost-btn',
-      onclick: async () => {
-        haptic(8);
-        dl.disabled = true;
-        try {
-          for (const r of rows) await loadModel(r.k);
-          toast('All AI painters are stored on this device.', { icon: icons.check });
-        } catch {
-          toast('Download interrupted. Check your connection.', { icon: icons.info });
-        } finally {
-          dl.disabled = false;
-        }
-      },
-    },
-    h('span', { html: icons.download }),
-    'Download all for offline',
-  );
-
-  const engine = h('span', { class: 'muted' }, '…');
-  backendName().then((b) => (engine.textContent = b === 'webgl' ? 'GPU (WebGL)' : b.toUpperCase()));
-
   const mpStatus = h('p', null, 'Checking this device…');
   const mpBtn = h('button', { class: 'ghost-btn', hidden: true });
   const refreshMp = async () => {
@@ -92,20 +51,17 @@ export default function about(root: HTMLElement) {
       'section',
       { class: 'card glow' },
       h('h3', null, h('span', { html: icons.lock }), 'Private by design'),
-      h('p', null, 'Your photos and videos never leave this device. The AI runs inside your browser on your own graphics chip. No accounts, no uploads, no tracking. Your Collection is stored locally and can be deleted at any time.'),
+      h('p', null, 'Your photos never leave this device. The AI runs inside your browser on your own graphics chip. No accounts, no uploads, no tracking. Your Collection is stored locally and can be deleted at any time.'),
     ),
-    h('section', { class: 'card' }, h('h3', null, h('span', { html: icons.sparkle }), 'AI painters'), h('div', { class: 'models' }, rows.map((r) => r.el)), dl, h('p', { class: 'muted small' }, 'Engine: ', engine)),
     mpCard,
     installCard ?? "",
     h(
       'section',
       { class: 'card' },
       h('h3', null, h('span', { html: icons.palette }), 'Credits'),
-      h('p', null, 'Neural style transfer: Magenta “Arbitrary Image Stylization” (Ghiasi et al., 2017) via the TensorFlow.js port by Reiichiro Nakano — Apache 2.0.'),
-      h('p', null, 'Masterpiece+: LCM‑DreamShaper‑v7 (Latent Consistency Models, Luo et al., 2023; DreamShaper by Lykon; based on Stable Diffusion 1.5) with the SDXS tiny autoencoder, used under CreativeML OpenRAIL licences. By using Masterpiece+ you agree to its use restrictions (no illegal, harmful, deceptive or harassing content). ', h('a', { href: 'models/mp2/LICENSE-MODEL.txt', target: '_blank', rel: 'noopener', class: 'link' }, 'Read the licence'), '. Runtime: ONNX Runtime Web.'),
-      h('p', null, 'Reference artworks are public‑domain works sourced from Wikimedia Commons. Pixel Worlds textures are generated procedurally. Minecraft is a trademark of Mojang Synergies AB; ArtifyMe is not affiliated with Mojang or Microsoft.'),
+      h('p', null, 'Masterpiece+: LCM‑DreamShaper‑v7 (Latent Consistency Models, Luo et al., 2023; DreamShaper by Lykon; based on Stable Diffusion 1.5) with the SDXS tiny autoencoder, used under CreativeML OpenRAIL licences. By using Masterpiece+ you agree to its use restrictions (no illegal, harmful, deceptive or harassing content). ', h('a', { href: 'models/mp2/LICENSE-MODEL.txt', target: '_blank', rel: 'noopener', class: 'link' }, 'Read the licence'), '. People & pets are found with DeepLabV3‑MobileNetV3 (torchvision, BSD‑3). Runtime: ONNX Runtime Web.'),
+      h('p', null, 'Reference artworks are public‑domain works sourced from Wikimedia Commons.'),
     ),
     h('p', { class: 'home-foot' }, `ArtifyMe ${__APP_VERSION__}`),
   );
-  return () => off();
 }

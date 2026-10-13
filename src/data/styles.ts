@@ -1,9 +1,7 @@
-import bottlenecks from './bottlenecks.json';
-import palettes from './palettes.json';
-import { DEFAULT_FINISH, type Finish, type Palette, type Surface } from '../ai/finish';
-
-export type StyleKind = 'neural' | 'procedural' | 'generative';
-export type Procedural = 'minecraft' | 'arcade' | 'bricks';
+// Every style is painted by Masterpiece+ (on‑device generative img2img).
+// "master" styles are steered toward a specific artwork/painter; "reimagine"
+// styles toward a medium or look (anime, 3D cartoon…).
+export type StyleKind = 'master' | 'generative';
 
 export interface ArtStyle {
   id: string;
@@ -15,45 +13,7 @@ export interface ArtStyle {
   blurb: string;
   accent: string;
   thumb: string;
-  /** 100‑d style embedding (neural styles). */
-  bottleneck?: number[];
-  procedural?: Procedural;
-  /** Painterly finishing recipe (neural styles). */
-  finish?: Finish;
-  /** Lab colour statistics of the reference artwork. */
-  palette?: Palette;
 }
-
-// brush size · impasto · ground · palette pull — tuned per artwork.
-// Values are relative intensities; the scaling keeps the finish restrained — heavier
-// settings tested worse (mushy faces, palette forcing drains skin tones).
-const F = (brush: number, impasto: number, surface: Surface, colorMatch: number): Finish => ({ brush: brush * 0.5, impasto: impasto * 0.4, surface, colorMatch: colorMatch * 0.25 });
-const FINISH: Record<string, Finish> = {
-  starry: F(1, 1, 'canvas', 0.6),
-  wave: F(0.45, 0, 'paper', 0.7),
-  kiss: F(0.6, 0.45, 'canvas', 0.65),
-  scream: F(0.9, 0.45, 'canvas', 0.6),
-  sunflowers: F(1, 1, 'canvas', 0.6),
-  kandinsky: F(0.75, 0.55, 'canvas', 0.5),
-  monet: F(1, 0.7, 'canvas', 0.65),
-  lilies: F(1, 0.6, 'canvas', 0.6),
-  gris: F(0.5, 0.3, 'canvas', 0.55),
-  mondrian: F(0.3, 0.2, 'canvas', 0.35),
-  seurat: F(0.35, 0.35, 'canvas', 0.55),
-  mucha: F(0.5, 0, 'paper', 0.6),
-  marc: F(0.8, 0.5, 'canvas', 0.5),
-  cypress: F(1, 1, 'canvas', 0.6),
-  schiele: F(0.6, 0.2, 'paper', 0.5),
-  hiroshige: F(0.45, 0, 'paper', 0.7),
-  rousseau: F(0.7, 0.4, 'canvas', 0.55),
-  rembrandt: F(0.85, 0.6, 'canvas', 0.7),
-  vermeer: F(0.8, 0.4, 'canvas', 0.6),
-  davinci: F(0.6, 0.3, 'panel', 0.7),
-  bosch: F(0.6, 0.3, 'panel', 0.6),
-};
-const pal = palettes as unknown as Record<string, Palette>;
-
-const vec = bottlenecks as Record<string, number[]>;
 
 const neural = (
   id: string,
@@ -63,20 +23,7 @@ const neural = (
   movement: string,
   accent: string,
   blurb: string,
-): ArtStyle => ({
-  id,
-  kind: 'neural',
-  name,
-  artist,
-  year,
-  movement,
-  accent,
-  blurb,
-  thumb: `styles/${id}.webp`,
-  bottleneck: vec[id],
-  finish: FINISH[id] ?? DEFAULT_FINISH,
-  palette: pal[id],
-});
+): ArtStyle => ({ id, kind: 'master', name, artist, year, movement, accent, blurb, thumb: `styles/${id}.webp` });
 
 export const MASTERS: ArtStyle[] = [
   neural('starry', 'The Starry Night', 'Vincent van Gogh', '1889', 'Post‑Impressionism', '#4f7fd6', 'Swirling skies and restless, luminous brushwork.'),
@@ -102,45 +49,6 @@ export const MASTERS: ArtStyle[] = [
   neural('bosch', 'Earthly Delights', 'Hieronymus Bosch', 'c. 1500', 'Northern Renaissance', '#7a9a6a', 'Surreal, jewel‑toned fantasia.'),
 ];
 
-export const PIXEL_WORLDS: ArtStyle[] = [
-  {
-    id: 'minecraft',
-    kind: 'procedural',
-    procedural: 'minecraft',
-    name: 'Blockcraft',
-    artist: 'Minecraft‑inspired',
-    year: '16×16',
-    movement: 'Voxel',
-    accent: '#5fae4a',
-    blurb: 'Rebuilt block by block from grass, stone, wood and wool.',
-    thumb: '',
-  },
-  {
-    id: 'arcade',
-    kind: 'procedural',
-    procedural: 'arcade',
-    name: '8‑Bit Arcade',
-    artist: 'Retro console',
-    year: '1985',
-    movement: 'Pixel art',
-    accent: '#ff4f8b',
-    blurb: 'A limited palette, ordered dithering and CRT glow.',
-    thumb: '',
-  },
-  {
-    id: 'bricks',
-    kind: 'procedural',
-    procedural: 'bricks',
-    name: 'Brick Builder',
-    artist: 'Toy bricks',
-    year: '1×1',
-    movement: 'Mosaic',
-    accent: '#f2c230',
-    blurb: 'A glossy mosaic of studded plastic bricks.',
-    thumb: '',
-  },
-];
-
 // Masterpiece+ only: no single source painting — the generative model draws these.
 const gen = (id: string, name: string, artist: string, movement: string, accent: string, blurb: string): ArtStyle => ({
   id,
@@ -162,9 +70,6 @@ export const REIMAGINE: ArtStyle[] = [
   gen('popart', 'Pop Art', '1960s screen print', 'Pop art', '#ffd23f', 'Flat colour, thick outlines, Ben‑Day dots.'),
 ];
 
-/** Styles the Masterpiece+ engine has prompt embeddings for. */
-export const MP_STYLE_IDS = new Set([...MASTERS.map((m) => m.id), ...REIMAGINE.map((r) => r.id)]);
-
-export const ALL_STYLES = [...MASTERS, ...PIXEL_WORLDS, ...REIMAGINE];
+export const ALL_STYLES = [...MASTERS, ...REIMAGINE];
 
 export const findStyle = (id: string) => ALL_STYLES.find((s) => s.id === id);

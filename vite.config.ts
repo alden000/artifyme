@@ -7,11 +7,6 @@ export default defineConfig({
   build: {
     target: 'es2020',
     chunkSizeWarningLimit: 2000,
-    rollupOptions: {
-      output: {
-        manualChunks: { tf: ['@tensorflow/tfjs'] },
-      },
-    },
   },
   plugins: [
     VitePWA({
@@ -22,7 +17,7 @@ export default defineConfig({
         id: './',
         name: 'ArtifyMe — Become the Masterpiece',
         short_name: 'ArtifyMe',
-        description: 'Turn photos and videos into masterpieces with private, on-device AI.',
+        description: 'Have your photos redrawn by the great masters with private, on-device AI.',
         theme_color: '#0a090d',
         background_color: '#0a090d',
         display: 'standalone',
@@ -37,22 +32,11 @@ export default defineConfig({
         ],
       },
       workbox: {
-        // Take control on first install so the AI models get cached during the very first session.
+        // Masterpiece+ keeps its own weight cache (artifyme-mp-v2); the service worker only stores the app shell.
         clientsClaim: true,
         globPatterns: ['**/*.{js,css,html,woff2,svg,png,webp}'],
         maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
         runtimeCaching: [
-          {
-            // AI weights are big: cache them on first use, then serve forever offline.
-            // Masterpiece+ manages its own cache (artifyme-mp-v1) — don't store its 500 MB twice.
-            urlPattern: ({ url }) => url.pathname.includes('/models/') && !url.pathname.includes('/models/mp/'),
-            handler: 'CacheFirst',
-            options: {
-              cacheName: 'artifyme-models-v1',
-              expiration: { maxEntries: 40 },
-              cacheableResponse: { statuses: [0, 200] },
-            },
-          },
           {
             // AI runtime (WebAssembly) for Masterpiece+.
             urlPattern: ({ url }) => url.pathname.endsWith('.wasm'),

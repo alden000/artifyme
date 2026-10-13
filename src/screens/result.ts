@@ -80,7 +80,7 @@ export default function result(root: HTMLElement) {
     before.width = media.still.width;
     before.height = media.still.height;
     before.getContext('2d')!.drawImage(media.still, 0, 0);
-    const after = h('img', { src: r.url, alt: `Your photo in the style of ${r.style.name}`, class: r.style.kind === 'procedural' ? 'pixel' : '' });
+    const after = h('img', { src: r.url, alt: `Your photo in the style of ${r.style.name}` });
     const cmp = compare(before, after, ar);
     stage = h('div', { class: 'result-stage reveal' }, cmp.el);
     intro = () => {
@@ -170,7 +170,7 @@ export default function result(root: HTMLElement) {
     h('p', { class: 'placard-no' }, `ArtifyMe Collection · No. ${no}`),
     h('h1', { class: 'placard-title' }, h('em', null, 'Untitled'), r.style.kind === 'generative' ? `, ${r.style.name.toLowerCase()}` : `, after ${r.style.name}`),
     h('p', { class: 'placard-sub' }, `${r.style.artist} (${r.style.year}) · ${r.style.movement}`),
-    h('p', { class: 'placard-medium' }, `${r.mpSeed !== undefined ? 'Redrawn by Masterpiece+' : r.style.kind === 'neural' ? 'Neural pigment' : 'Procedural pixels'} on device, ${new Date().getFullYear()}`),
+    h('p', { class: 'placard-medium' }, `${r.mpSeed !== undefined ? 'Redrawn by Masterpiece+' : 'Neural pigment'} on device, ${new Date().getFullYear()}`),
   );
 
   root.append(

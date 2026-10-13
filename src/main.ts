@@ -7,7 +7,6 @@ import { h, reducedMotion, sleep, splitLetters } from './ui/dom';
 import { initAurora } from './ui/fx';
 import { go, register } from './router';
 import { initPwa } from './pwa';
-import { getTf, loadModel, warmUp } from './ai/engine';
 
 register('home', () => import('./screens/home').then((m) => m.default));
 register('studio', () => import('./screens/studio').then((m) => m.default));
@@ -43,14 +42,6 @@ async function boot() {
   initAurora(document.getElementById('aurora') as HTMLCanvasElement);
   initPwa();
   const intro = splash();
-  // Start the AI engine & fast painter quietly while the intro plays.
-  const idle = (cb: () => void) => ('requestIdleCallback' in window ? requestIdleCallback(cb, { timeout: 2500 }) : setTimeout(cb, 1200));
-  idle(() => {
-    getTf()
-      .then(() => loadModel('fast'))
-      .then(() => warmUp('fast'))
-      .catch((e) => console.warn('AI warm‑up deferred:', e));
-  });
   await intro;
   await go('home');
   document.body.classList.add('ready');

@@ -2,13 +2,9 @@ import { h, sleep } from '../ui/dom';
 import { icons } from '../ui/icons';
 import { countTo, haptic, pauseAurora, toast } from '../ui/fx';
 import { currentStyle, setResult, state } from '../state';
-import { loadModel, onModelProgress, isModelLoaded } from '../ai/engine';
-import { QUALITY, renderStyle } from '../ai/pipeline';
-import { stylizeVideo } from '../media/video';
 import { canvasToBlob } from '../media/save';
 import { addCreation, newId } from '../store/gallery';
 import { mpLoad, mpPaint, mpReady } from '../ai/masterpiece';
-import { MP_STYLE_IDS } from '../data/styles';
 
 const LINES = [
   'Grinding the pigments…',
@@ -98,10 +94,9 @@ export async function runRender(): Promise<boolean> {
   const lineTimer = setInterval(() => say(LINES[li++ % LINES.length].replace('{artist}', style.artist)), 2300);
   say(LINES[0]);
 
-  let offProgress = () => {};
   let simTimer = 0;
   try {
-    if (media.kind === 'image' && state.mp.on && MP_STYLE_IDS.has(style.id)) {
+    {
       // Masterpiece+: unpack & compile the painter (first time per session), then paint.
       const wasReady = mpReady();
       if (!wasReady) {
@@ -126,7 +121,9 @@ export async function runRender(): Promise<boolean> {
         style: style.id,
         strength: state.mp.strength,
         keepColors: state.mp.keepColors,
+        protectPeople: state.mp.protectPeople,
         seed,
+        onPhase: (ph) => ph === 'people' && say('Taking extra care with faces…'),
         onStep: (i, n) => {
           fake = Math.max(fake, (wasReady ? 0.05 : 0.85) + ((wasReady ? 0.9 : 0.12) * i) / n);
           setP(fake);
@@ -140,60 +137,6 @@ export async function runRender(): Promise<boolean> {
       const id = newId();
       setResult({ kind: 'image', blob, url: URL.createObjectURL(blob), width: out.width, height: out.height, style, canvas: out, creationId: id, mpSeed: seed });
       void addCreation({ id, kind: 'image', styleId: style.id, styleName: style.name, createdAt: Date.now(), blob, thumb: await makeThumb(out), width: out.width, height: out.height }).catch(() => {});
-    } else if (media.kind === 'image') {
-      // Phase 1 — model download (real progress), Phase 2 — painting (estimated).
-      const modelKey = style.kind === 'neural' ? QUALITY[state.settings.quality].model : null;
-      if (modelKey && !isModelLoaded(modelKey)) {
-        say('Fetching AI pigments (one‑time)…');
-        offProgress = onModelProgress((k, p) => k === modelKey && setP(p * 0.35));
-        await loadModel(modelKey);
-      }
-      if (abort.signal.aborted) throw new DOMException('Cancelled', 'AbortError');
-      const start = isModelLoaded(modelKey ?? 'fast') ? 0.35 : 0;
-      let fake = start;
-      simTimer = window.setInterval(() => {
-        fake += (0.94 - fake) * 0.06;
-        setP(fake);
-      }, 120);
-      await sleep(450); // let the overture breathe
-      const out = await renderStyle(style, media.still, media.still.width, media.still.height, state.settings);
-      if (abort.signal.aborted) throw new DOMException('Cancelled', 'AbortError');
-      clearInterval(simTimer);
-      setP(1);
-      say('Signed & varnished.');
-      const isPixel = style.kind === 'procedural';
-      const blob = await canvasToBlob(out, isPixel ? 'image/png' : 'image/jpeg', 0.94);
-      const id = newId();
-      setResult({ kind: 'image', blob, url: URL.createObjectURL(blob), width: out.width, height: out.height, style, canvas: out, creationId: id });
-      void addCreation({ id, kind: 'image', styleId: style.id, styleName: style.name, createdAt: Date.now(), blob, thumb: await makeThumb(out), width: out.width, height: out.height }).catch(() => {});
-    } else {
-      if (style.kind === 'neural' && !isModelLoaded('fast')) {
-        say('Fetching AI pigments (one‑time)…');
-        offProgress = onModelProgress((k, p) => k === 'fast' && setP(p * 0.1));
-        await loadModel('fast');
-      }
-      const ctx = canvasView.getContext('2d')!;
-      const res = await stylizeVideo({
-        file: media.file,
-        fps: state.video.fps,
-        maxSide: state.video.maxSide,
-        signal: abort.signal,
-        stylize: (frame) => renderStyle(style, frame, frame.width, frame.height, state.settings, { maxSide: state.video.maxSide, model: 'fast' }),
-        onProgress: (done, total, preview) => {
-          if (canvasView.width !== preview.width) {
-            canvasView.width = preview.width;
-            canvasView.height = preview.height;
-          }
-          ctx.drawImage(preview, 0, 0);
-          frameEl.classList.add('live');
-          setP(0.1 + (done / total) * 0.88);
-          if (done === total) say('Encoding your film…');
-        },
-      });
-      setP(1);
-      const id = newId();
-      setResult({ kind: 'video', blob: res.blob, url: URL.createObjectURL(res.blob), width: res.width, height: res.height, style, poster: res.poster, creationId: id });
-      void addCreation({ id, kind: 'video', styleId: style.id, styleName: style.name, createdAt: Date.now(), blob: res.blob, thumb: await makeThumb(res.poster), width: res.width, height: res.height }).catch(() => {});
     }
     haptic([20, 60, 30]);
     await sleep(380);
@@ -201,14 +144,13 @@ export async function runRender(): Promise<boolean> {
   } catch (e) {
     if ((e as DOMException).name !== 'AbortError') {
       console.error(e);
-      const msg = /memory|OOM|allocate|texture/i.test(String(e)) ? 'Your device ran out of graphics memory. Try a lower quality.' : (e as Error).message || 'Something went wrong while painting.';
+      const msg = /memory|OOM|allocate|texture/i.test(String(e)) ? 'Your device ran out of graphics memory. Close other apps and try again.' : (e as Error).message || 'Something went wrong while painting.';
       toast(msg, { icon: icons.info, duration: 5000 });
     }
     return false;
   } finally {
     clearInterval(lineTimer);
     clearInterval(simTimer);
-    offProgress();
     pauseAurora(false);
     overlay.classList.remove('in');
     overlay.classList.add('out');

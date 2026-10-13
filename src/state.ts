@@ -1,22 +1,21 @@
 import { ALL_STYLES, type ArtStyle } from './data/styles';
-import { DEFAULT_SETTINGS, type RenderSettings } from './ai/pipeline';
 
 export interface MpSettings {
-  on: boolean;
-  /** img2img strength: 0.3 keeps the photo, 0.7 lets the artist take over. */
+  /** img2img strength for the scene: 0.25 keeps the photo, 0.6 lets the artist take over. */
   strength: number;
   keepColors: boolean;
+  /** Repaint detected people & pets separately (crop, faithful) so they stay recognisable. */
+  protectPeople: boolean;
 }
 
 export interface Media {
-  kind: 'image' | 'video';
+  kind: 'image';
   file: Blob;
   url: string;
   width: number;
   height: number;
-  /** Decoded still (image) or poster frame (video), ready for drawing. */
+  /** Decoded photo, ready for drawing. */
   still: HTMLCanvasElement;
-  duration?: number;
 }
 
 export interface Result {
@@ -31,11 +30,6 @@ export interface Result {
   creationId?: string;
   /** Present when produced by Masterpiece+ (enables "Paint again"). */
   mpSeed?: number;
-}
-
-export interface VideoSettings {
-  fps: 12 | 24;
-  maxSide: 360 | 540 | 720;
 }
 
 const load = <T>(key: string, fallback: T): T => {
@@ -58,22 +52,17 @@ export const state = {
   media: null as Media | null,
   result: null as Result | null,
   styleId: 'starry',
-  customStyles: [] as ArtStyle[],
-  settings: load<RenderSettings>('artifyme.settings', DEFAULT_SETTINGS),
-  video: load<VideoSettings>('artifyme.video', { fps: 12, maxSide: 540 }),
-  // v4: faithful‑first default (0.35) after real‑photo testing.
-  mp: load<MpSettings>('artifyme.mp4', { on: false, strength: 0.35, keepColors: false }),
+  // v5: Masterpiece+ is the only engine; people are protected by default.
+  mp: load<MpSettings>('artifyme.mp5', { strength: 0.45, keepColors: false, protectPeople: true }),
   mpSeed: 7,
 };
 
 export function persistSettings() {
-  save('artifyme.settings', state.settings);
-  save('artifyme.video', state.video);
-  save('artifyme.mp4', state.mp);
+  save('artifyme.mp5', state.mp);
 }
 
 export function currentStyle(): ArtStyle {
-  return state.customStyles.find((s) => s.id === state.styleId) ?? ALL_STYLES.find((s) => s.id === state.styleId) ?? ALL_STYLES[0];
+  return ALL_STYLES.find((s) => s.id === state.styleId) ?? ALL_STYLES[0];
 }
 
 export function setMedia(m: Media | null) {

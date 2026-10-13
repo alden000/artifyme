@@ -7,16 +7,22 @@
 // Nothing is uploaded.
 import type * as ORT from 'onnxruntime-web';
 import { lcmImg2Img } from './lcm';
+import { blendPatch, featherMask, fitSize, maskBox, maskIn, maskOutside, resizeMap, subjectBoxes, type Box } from './split';
 
-export const MP_DOWNLOAD_MB = 900; // UNet weights + runtime + autoencoder
+export const MP_DOWNLOAD_MB = 945; // UNet weights + runtime + autoencoder + people finder
 const BASE = new URL('models/mp2/', document.baseURI).href;
 const CHUNKS = 26;
 const CACHE = 'artifyme-mp-v2';
-const OLD_CACHES = ['artifyme-mp-v1'];
+// v1 engine, plus the classic models and a service‑worker copy of the painter.
+const OLD_CACHES = ['artifyme-mp-v1', 'artifyme-models-v1'];
 // 640 px: small subjects (a child in a wide shot) survive far better than at 512,
 // without 768's ~7× attention memory on phone GPUs.
 const SIDE = 640;
 const STEPS = 4;
+/** People are repainted from a crop this big, at most this strength. */
+const PEOPLE_SIDE = 512;
+const PEOPLE_STRENGTH = 0.3;
+const FILES = ['graph.f16.onnx', 'vae_encoder.onnx', 'vae_decoder.onnx', 'seg.onnx'];
 
 export interface Support {
   ok: boolean;
@@ -53,6 +59,7 @@ export async function mpInstalled(): Promise<boolean> {
   try {
     const c = await caches.open(CACHE);
     for (let i = 0; i < CHUNKS; i++) if (!(await c.match(`${BASE}weights.q8.${String(i).padStart(2, '0')}`))) return false;
+    for (const f of FILES) if (!(await c.match(BASE + f))) return false;
     return true;
   } catch {
     return false;
@@ -97,7 +104,7 @@ export async function mpDownload(onProgress: Progress) {
   dropOldCaches();
   await runWorker({ base: BASE, key: 'w16', chunks: CHUNKS, cacheName: CACHE, downloadOnly: true }, onProgress);
   const c = await caches.open(CACHE);
-  await Promise.all(['graph.f16.onnx', 'vae_encoder.onnx', 'vae_decoder.onnx'].map(async (f) => (await c.match(BASE + f)) || c.add(BASE + f).catch(() => {})));
+  await Promise.all(FILES.map(async (f) => (await c.match(BASE + f)) || c.add(BASE + f).catch(() => {})));
 }
 
 let ortP: Promise<typeof ORT> | null = null;
@@ -130,7 +137,7 @@ async function cachedBytes(file: string) {
   }
 }
 
-let sessions: { unet: ORT.InferenceSession; enc: ORT.InferenceSession; dec: ORT.InferenceSession } | null = null;
+let sessions: { unet: ORT.InferenceSession; enc: ORT.InferenceSession; dec: ORT.InferenceSession; seg: ORT.InferenceSession } | null = null;
 let loading: Promise<void> | null = null;
 
 export const mpReady = () => !!sessions;
@@ -149,8 +156,9 @@ export function mpLoad(onProgress: Progress = () => {}): Promise<void> {
     onProgress('compile', 0.85);
     const enc = await ort.InferenceSession.create(await cachedBytes('vae_encoder.onnx'), opts);
     const dec = await ort.InferenceSession.create(await cachedBytes('vae_decoder.onnx'), opts);
+    const seg = await ort.InferenceSession.create(await cachedBytes('seg.onnx'), opts);
     onProgress('compile', 1);
-    sessions = { unet, enc, dec };
+    sessions = { unet, enc, dec, seg };
   })();
   loading.catch(() => (loading = null));
   return loading;
@@ -179,46 +187,56 @@ function styleEmbedding(style: string): Promise<Float32Array> {
 
 export interface PaintOptions {
   style: string;
-  /** 0.3 (faithful to the photo) … 0.7 (artistic freedom). */
+  /** 0.25 (faithful to the photo) … 0.6 (artistic freedom). */
   strength: number;
   keepColors: boolean;
+  /** Repaint people & pets from an enlarged crop so they stay recognisable. */
+  protectPeople?: boolean;
   seed: number;
   onStep?: (i: number, n: number) => void;
+  onPhase?: (phase: 'scene' | 'people') => void;
 }
 
-/** Repaint a photo. Returns a canvas at ~2× the model resolution. */
-export async function mpPaint(photo: HTMLCanvasElement, o: PaintOptions): Promise<HTMLCanvasElement> {
-  if (!sessions) throw new Error('Masterpiece+ is not loaded');
+const canvas = (w: number, h: number) => {
+  const c = document.createElement('canvas');
+  c.width = w;
+  c.height = h;
+  return c;
+};
+
+/** Draw (part of) a source into a w×h canvas and return its pixels. */
+function grab(src: CanvasImageSource, w: number, h: number, sx?: number, sy?: number, sw?: number, sh?: number) {
+  const ctx = canvas(w, h).getContext('2d', { willReadFrequently: true })!;
+  ctx.imageSmoothingQuality = 'high';
+  if (sx === undefined) ctx.drawImage(src, 0, 0, w, h);
+  else ctx.drawImage(src, sx, sy!, sw!, sh!, 0, 0, w, h);
+  return ctx.getImageData(0, 0, w, h);
+}
+
+/** One img2img pass on a W×H image (multiples of 64). */
+async function img2img(px: ImageData, style: string, strength: number, seed: number, onStep?: (i: number, n: number) => void): Promise<ImageData> {
   const ort = await getOrt();
-  const { unet, enc, dec } = sessions;
-  const s = SIDE / Math.max(photo.width, photo.height);
-  const W = Math.max(256, Math.round((photo.width * s) / 64) * 64), H = Math.max(256, Math.round((photo.height * s) / 64) * 64);
-  const small = document.createElement('canvas');
-  small.width = W;
-  small.height = H;
-  const sctx = small.getContext('2d', { willReadFrequently: true })!;
-  sctx.imageSmoothingQuality = 'high';
-  sctx.drawImage(photo, 0, 0, W, H);
-  const px = sctx.getImageData(0, 0, W, H).data;
+  const { unet, enc, dec } = sessions!;
+  const { width: W, height: H } = px;
   const plane = W * H;
   const rgb = new Float32Array(3 * plane);
   for (let i = 0; i < plane; i++) {
-    rgb[i] = px[i * 4] / 127.5 - 1;
-    rgb[plane + i] = px[i * 4 + 1] / 127.5 - 1;
-    rgb[2 * plane + i] = px[i * 4 + 2] / 127.5 - 1;
+    rgb[i] = px.data[i * 4] / 127.5 - 1;
+    rgb[plane + i] = px.data[i * 4 + 1] / 127.5 - 1;
+    rgb[2 * plane + i] = px.data[i * 4 + 2] / 127.5 - 1;
   }
   const er = await enc.run({ image: new ort.Tensor('float32', rgb, [1, 3, H, W]) });
   const init = (await er.latent.getData()) as Float32Array;
   Object.values(er).forEach((t) => t.dispose?.());
 
   const lh = H / 8, lw = W / 8;
-  const emb = new ort.Tensor('float32', await styleEmbedding(o.style), [1, 77, 768]);
+  const emb = new ort.Tensor('float32', await styleEmbedding(style), [1, 77, 768]);
   const z = await lcmImg2Img({
     init,
-    strength: Math.min(0.75, Math.max(0.25, o.strength)),
+    strength: Math.min(0.75, Math.max(0.2, strength)),
     steps: STEPS,
-    seed: o.seed,
-    onStep: o.onStep,
+    seed,
+    onStep,
     unet: async (x, t) => {
       const r = await unet.run({
         sample: new ort.Tensor('float32', x, [1, 4, lh, lw]),
@@ -242,12 +260,86 @@ export async function mpPaint(photo: HTMLCanvasElement, o: PaintOptions): Promis
     out.data[i * 4 + 2] = (img[2 * plane + i] + 1) * 127.5;
     out.data[i * 4 + 3] = 255;
   }
-  if (o.keepColors) keepOriginalColors(out, sctx.getImageData(0, 0, W, H));
-  const painted = document.createElement('canvas');
-  painted.width = W;
-  painted.height = H;
-  painted.getContext('2d')!.putImageData(out, 0, 0);
-  return upscale(painted, photo.width / photo.height);
+  return out;
+}
+
+/** P(person | dog | cat) per pixel, resampled to W×H. */
+async function subjectMask(photo: HTMLCanvasElement, W: number, H: number) {
+  const ort = await getOrt();
+  const { w, h } = fitSize(photo.width, photo.height, 512);
+  const px = grab(photo, w, h).data;
+  const plane = w * h;
+  const rgb = new Float32Array(3 * plane);
+  for (let i = 0; i < plane; i++) {
+    rgb[i] = px[i * 4] / 255;
+    rgb[plane + i] = px[i * 4 + 1] / 255;
+    rgb[2 * plane + i] = px[i * 4 + 2] / 255;
+  }
+  const r = await sessions!.seg.run({ image: new ort.Tensor('float32', rgb, [1, 3, h, w]) });
+  const m = (await r.mask.getData()) as Float32Array;
+  Object.values(r).forEach((t) => t.dispose?.());
+  return resizeMap(m, w, h, W, H);
+}
+
+/** Repaint a photo. Returns a canvas at ~2× the model resolution. */
+export async function mpPaint(photo: HTMLCanvasElement, o: PaintOptions): Promise<HTMLCanvasElement> {
+  if (!sessions) throw new Error('Masterpiece+ is not loaded');
+  const s = SIDE / Math.max(photo.width, photo.height);
+  const W = Math.max(256, Math.round((photo.width * s) / 64) * 64), H = Math.max(256, Math.round((photo.height * s) / 64) * 64);
+  const src = grab(photo, W, H);
+
+  // Find people first so progress can be split between the passes.
+  let boxes: Box[] = [];
+  let mask: Float32Array | null = null;
+  // People too big or too spread out for a crop (portraits, crowds) get a faithful
+  // full‑frame pass instead, blended in through the same soft mask.
+  let rest: Float32Array | null = null;
+  let restBox: Box | null = null;
+  if (o.protectPeople) {
+    try {
+      mask = await subjectMask(photo, W, H);
+      // Only worth it when the crop gets ≥1.3× the scene's pixels per side.
+      boxes = subjectBoxes(mask, W, H, PEOPLE_SIDE / 1.3);
+      rest = maskOutside(mask, W, boxes);
+      restBox = maskBox(rest, W, H);
+    } catch (e) {
+      console.warn('Masterpiece+: people finder failed, painting the whole scene', e);
+    }
+  }
+  const faithful = Math.min(o.strength, PEOPLE_STRENGTH);
+  if (faithful >= o.strength) restBox = null; // the scene pass is already faithful
+  // Progress: every pass gets an equal slice.
+  const passes = 1 + (restBox ? 1 : 0) + boxes.length;
+  let pass = 0;
+  const step = (i: number, n: number) => o.onStep?.((pass * n + i) / passes, n);
+  o.onPhase?.('scene');
+  const out = await img2img(src, o.style, o.strength, o.seed, step);
+  pass++;
+
+  if (passes > 1) o.onPhase?.('people');
+  if (restBox && rest) {
+    const near = await img2img(src, o.style, faithful, o.seed, step);
+    pass++;
+    blendPatch(out.data, W, near.data, { x0: 0, y0: 0, x1: W, y1: H, size: restBox.size }, featherMask(rest, W, H, restBox.size));
+  }
+  for (const box of boxes) {
+    const bw = box.x1 - box.x0, bh = box.y1 - box.y0;
+    // Crop from the full‑resolution photo for the most detail.
+    const sx = photo.width / W, sy = photo.height / H;
+    const fit = fitSize(bw * sx, bh * sy, PEOPLE_SIDE);
+    const crop = grab(photo, fit.w, fit.h, box.x0 * sx, box.y0 * sy, bw * sx, bh * sy);
+    const painted = await img2img(crop, o.style, faithful, o.seed, step);
+    pass++;
+    const pc = canvas(fit.w, fit.h);
+    pc.getContext('2d')!.putImageData(painted, 0, 0);
+    const patch = grab(pc, bw, bh);
+    blendPatch(out.data, W, patch.data, box, featherMask(maskIn(mask!, W, box), W, H, box.size));
+  }
+
+  if (o.keepColors) keepOriginalColors(out, src);
+  const result = canvas(W, H);
+  result.getContext('2d')!.putImageData(out, 0, 0);
+  return upscale(result, photo.width / photo.height);
 }
 
 /** Take luminance from the painting, colour (chroma) from the photo. */

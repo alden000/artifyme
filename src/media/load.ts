@@ -1,5 +1,4 @@
 import type { Media } from '../state';
-import { loadVideo } from './video';
 
 const MAX_STILL = 2048;
 
@@ -35,20 +34,8 @@ async function decodeImage(file: Blob): Promise<HTMLCanvasElement> {
 }
 
 export async function loadMedia(file: File | Blob): Promise<Media> {
-  const isVideo = file.type.startsWith('video/') || /\.(mp4|mov|webm|m4v|3gp)$/i.test((file as File).name ?? '');
+  if (file.type.startsWith('video/')) throw new Error('Masterpiece+ paints photos — please choose an image.');
   const url = URL.createObjectURL(file);
-  if (!isVideo) {
-    const still = await decodeImage(file);
-    return { kind: 'image', file, url, width: still.width, height: still.height, still };
-  }
-  const v = await loadVideo(url);
-  await new Promise<void>((res) => {
-    const t = Math.min(0.15, (v.duration || 1) / 4);
-    const done = () => res();
-    v.addEventListener('seeked', done, { once: true });
-    v.currentTime = t;
-    setTimeout(done, 1500);
-  });
-  const still = toCanvas(v, v.videoWidth, v.videoHeight);
-  return { kind: 'video', file, url, width: v.videoWidth, height: v.videoHeight, still, duration: v.duration };
+  const still = await decodeImage(file);
+  return { kind: 'image', file, url, width: still.width, height: still.height, still };
 }
