@@ -30,3 +30,5 @@ jobs:
           publish_dir: ./dist
           publish_branch: gh-pages
           force_orphan: true
+          # Keep the custom domain set in Settings → Pages (orphan deploys would wipe it).
+          cname: artifyme.wwweeeiii.com
