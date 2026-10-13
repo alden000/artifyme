@@ -34,6 +34,9 @@ export async function getTf(): Promise<typeof TF> {
       if (tf.getBackend() === 'webgl') {
         // Phones (iOS especially) kill tabs that hoard GPU memory: recycle textures beyond 128 MB.
         tf.env().set('WEBGL_DELETE_TEXTURE_THRESHOLD', 128 * 1024 * 1024);
+        // im2col turns the 9×9 convolutions into one huge matrix (13k² textures at 896px),
+        // far beyond phone GPU limits. Direct convolution keeps every texture small.
+        tf.env().set('WEBGL_CONV_IM2COL', false);
       }
       return tf;
     })();
