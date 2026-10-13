@@ -269,9 +269,9 @@ export default function studio(root: HTMLElement) {
           slider({
             label: 'Faithful to your photo',
             value: state.mp.fidelity,
-            min: 0.55,
-            max: 1,
-            format: (v) => (v < 0.7 ? 'Loose' : v < 0.88 ? 'Balanced' : 'Faithful'),
+            min: 0.6,
+            max: 1.3,
+            format: (v) => (v < 0.8 ? 'Loose' : v < 1.05 ? 'Balanced' : 'Strict'),
             onInput: (v) => {
               state.mp.fidelity = v;
               persistSettings();

@@ -19,11 +19,11 @@ A Progressive Web App for Android and iOS that repaints your photos and short vi
 The Classic engine only transfers an artwork's texture and colour onto the photo. **Masterpiece+** goes further: it re‑draws the subject in the artist's own manner. A Munch rendering gets Munch's way of painting a face; a Reimagine style turns the photo into an anime illustration, a 3D cartoon, a comic panel, a pencil sketch, a watercolour or pop art.
 
 - **Model:** [SDXS‑512‑DreamShaper](https://huggingface.co/IDKiro/sdxs-512-dreamshaper), a one‑step latent diffusion model, plus its [sketch ControlNet](https://huggingface.co/IDKiro/sdxs-512-dreamshaper-sketch). Both are under CreativeML OpenRAIL++‑M (see `public/models/mp/LICENSE-MODEL.txt`).
-- **How it works:** the photo is turned into an ink drawing (XDoG after local contrast normalisation, `src/ai/lines.ts`). The model paints that drawing from noise in a single step, steered by a prompt embedding precomputed for every style × subject. The text encoder therefore never ships.
+- **How it works:** a learned line‑art model ("Informative Drawings", the ControlNet *lineart‑coarse* annotator, 17 MB, MIT) turns the photo into a clean pencil‑style drawing. The model paints that drawing from noise in a single step, steered by a prompt embedding precomputed for every style × subject. The text encoder therefore never ships.
 - **Size:** UNet and ControlNet are merged into one ONNX graph. Large weights are stored as 8‑bit per‑channel values (503 MB, in 16 chunks of 32 MB). A Web Worker streams them, caches them in Cache Storage and expands them to fp16 (or fp32 on GPUs without `shader-f16`). It never holds the whole download in memory.
 - **Runtime:** onnxruntime‑web on WebGPU. It requires WebGPU: iOS 26+ Safari, or recent Chrome on Android with ≥ 6 GB RAM and `shader-f16`. Everything else keeps the Classic engine.
-- **Controls:** "In your photo" (Person / People / Dog / Cat / Landscape / City / Object), *Faithful to your photo* (ControlNet strength), *Keep my colours*, and **Paint again** for a new variation.
-- **Rebuilding the assets:** `scripts/masterpiece/` (Python with torch, diffusers and onnx): `export_cn.py` → `pack.py` → `embed.py`. `mp_ref.py` is the reference pipeline that the TypeScript port mirrors.
+- **Controls:** "In your photo" (Woman / Man / Child / People / Dog / Cat / Landscape / City / Object), *Faithful to your photo* (ControlNet strength), *Keep my colours*, and **Paint again** for a new variation.
+- **Rebuilding the assets:** `scripts/masterpiece/` (Python with torch, diffusers and onnx): `export_cn.py` → `pack.py` → `embed.py`, plus `export_lineart.py`. `mp_ref.py` is the reference pipeline that the TypeScript port mirrors.
 - **Hosting note:** GitHub Pages has a soft limit of 100 GB/month bandwidth, which is about 190 first‑time Masterpiece+ downloads per month. Move `public/models/mp/` to a CDN (Hugging Face, Cloudflare R2) if usage grows.
 
 ## How the AI works

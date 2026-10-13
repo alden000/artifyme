@@ -31,11 +31,13 @@ P = {
 }
 
 SUBJECTS = {
- "person": "a portrait of a person",
+ "woman": "a portrait of a woman",
+ "man": "a portrait of a man",
+ "child": "a portrait of a child",
  "people": "a group of people",
  "dog": "a dog",
  "cat": "a cat",
  "landscape": "a landscape scenery",
- "city": "a city with buildings",
+ "city": "a city street with buildings",
  "object": "a still life of an object",
 }

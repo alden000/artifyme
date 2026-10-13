@@ -6,9 +6,8 @@
 // artist's own way of depicting a face — rather than recolouring the photo.
 // Runs with onnxruntime‑web on WebGPU. Nothing is uploaded.
 import type * as ORT from 'onnxruntime-web';
-import { inkLines } from './lines';
 
-export const MP_DOWNLOAD_MB = 535; // weights + runtime + decoder
+export const MP_DOWNLOAD_MB = 555; // weights + runtime + decoder + line‑art model
 const BASE = new URL('models/mp/', document.baseURI).href;
 const CHUNKS = 16;
 const CACHE = 'artifyme-mp-v1';
@@ -25,7 +24,9 @@ const AC999 = (() => {
 })();
 
 export const SUBJECTS = [
-  { id: 'person', label: 'Person' },
+  { id: 'woman', label: 'Woman' },
+  { id: 'man', label: 'Man' },
+  { id: 'child', label: 'Child' },
   { id: 'people', label: 'People' },
   { id: 'dog', label: 'Dog' },
   { id: 'cat', label: 'Cat' },
@@ -110,7 +111,7 @@ export async function mpDownload(onProgress: Progress) {
   await runWorker({ base: BASE, key: 'w16', chunks: CHUNKS, cacheName: CACHE, downloadOnly: true }, onProgress);
   // Warm the small files into the cache too.
   const c = await caches.open(CACHE);
-  await Promise.all([GRAPH.fp16, GRAPH.fp32, 'vae_decoder.onnx'].map(async (f) => (await c.match(BASE + f)) || c.add(BASE + f).catch(() => {})));
+  await Promise.all([GRAPH.fp16, GRAPH.fp32, 'vae_decoder.onnx', 'lineart.onnx'].map(async (f) => (await c.match(BASE + f)) || c.add(BASE + f).catch(() => {})));
 }
 
 let ortP: Promise<typeof ORT> | null = null;
@@ -143,7 +144,7 @@ async function cachedBytes(file: string) {
   }
 }
 
-let sessions: { unet: ORT.InferenceSession; dec: ORT.InferenceSession } | null = null;
+let sessions: { unet: ORT.InferenceSession; dec: ORT.InferenceSession; lines: ORT.InferenceSession } | null = null;
 let loading: Promise<void> | null = null;
 
 export const mpReady = () => !!sessions;
@@ -163,8 +164,12 @@ export function mpLoad(onProgress: Progress = () => {}): Promise<void> {
     const unet = await ort.InferenceSession.create(graph, { ...opts, externalData: [{ path: 'w', data: new Uint8Array(weights!) }] });
     onProgress('compile', 0.8);
     const dec = await ort.InferenceSession.create(await cachedBytes('vae_decoder.onnx'), opts);
+    onProgress('compile', 0.9);
+    // Learned line‑art extractor ("Informative Drawings"): clean, artist‑like outlines
+    // make the painter follow the photo's composition and faces far more closely.
+    const lines = await ort.InferenceSession.create(await cachedBytes('lineart.onnx'), opts);
     onProgress('compile', 1);
-    sessions = { unet, dec };
+    sessions = { unet, dec, lines };
   })();
   loading.catch(() => (loading = null));
   return loading;
@@ -178,7 +183,7 @@ function styleEmbedding(style: string, subject: Subject): Promise<Float32Array> 
   if (!p) {
     p = (async () => {
       const idx = SUBJECTS.findIndex((s) => s.id === subject);
-      const bytes = await cachedBytes(`emb/${style}.bin`);
+      const bytes = await cachedBytes(`emb2/${style}.bin`);
       const per = 77 * 768;
       const h = new Uint16Array(bytes.buffer, bytes.byteOffset + idx * per * 2, per);
       const out = new Float32Array(per);
@@ -232,11 +237,25 @@ export async function mpPaint(photo: HTMLCanvasElement, o: PaintOptions): Promis
   const sctx = small.getContext('2d', { willReadFrequently: true })!;
   sctx.imageSmoothingQuality = 'high';
   sctx.drawImage(photo, 0, 0, W, H);
-  const lines = inkLines(sctx.getImageData(0, 0, W, H));
-  const cond = new Float32Array(3 * W * H);
-  cond.set(lines, 0);
-  cond.set(lines, W * H);
-  cond.set(lines, 2 * W * H);
+  // Photo → line drawing (1 = paper, 0 = ink).
+  const px = sctx.getImageData(0, 0, W, H).data;
+  const plane = W * H;
+  const rgb = new Float32Array(3 * plane);
+  for (let i = 0; i < plane; i++) {
+    rgb[i] = px[i * 4] / 255;
+    rgb[plane + i] = px[i * 4 + 1] / 255;
+    rgb[2 * plane + i] = px[i * 4 + 2] / 255;
+  }
+  const lr = await sessions.lines.run({ image: new ort.Tensor('float32', rgb, [1, 3, H, W]) });
+  const lines = (await lr.lines.getData()) as Float32Array;
+  Object.values(lr).forEach((t) => t.dispose?.());
+  const cond = new Float32Array(3 * plane);
+  for (let i = 0; i < plane; i++) {
+    const v = Math.min(1, Math.max(0, lines[i]));
+    cond[i] = v;
+    cond[plane + i] = v;
+    cond[2 * plane + i] = v;
+  }
 
   const lh = H / 8, lw = W / 8;
   const x = gaussian(o.seed, 4 * lh * lw);
@@ -260,7 +279,6 @@ export async function mpPaint(photo: HTMLCanvasElement, o: PaintOptions): Promis
 
   // CHW [-1,1] → RGBA
   const out = new ImageData(W, H);
-  const plane = W * H;
   for (let i = 0; i < plane; i++) {
     out.data[i * 4] = (img[i] + 1) * 127.5;
     out.data[i * 4 + 1] = (img[plane + i] + 1) * 127.5;

@@ -63,14 +63,15 @@ export const state = {
   customStyles: [] as ArtStyle[],
   settings: load<RenderSettings>('artifyme.settings', DEFAULT_SETTINGS),
   video: load<VideoSettings>('artifyme.video', { fps: 12, maxSide: 540 }),
-  mp: load<MpSettings>('artifyme.mp', { on: false, subject: 'person', fidelity: 0.85, keepColors: false }),
+  // v2 key: new subject list (woman/man/child…) and stronger default fidelity.
+  mp: load<MpSettings>('artifyme.mp2', { on: false, subject: 'woman', fidelity: 1, keepColors: false }),
   mpSeed: 7,
 };
 
 export function persistSettings() {
   save('artifyme.settings', state.settings);
   save('artifyme.video', state.video);
-  save('artifyme.mp', state.mp);
+  save('artifyme.mp2', state.mp);
 }
 
 export function currentStyle(): ArtStyle {

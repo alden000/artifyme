@@ -102,7 +102,7 @@ export default function about(root: HTMLElement) {
       { class: 'card' },
       h('h3', null, h('span', { html: icons.palette }), 'Credits'),
       h('p', null, 'Neural style transfer: Magenta “Arbitrary Image Stylization” (Ghiasi et al., 2017) via the TensorFlow.js port by Reiichiro Nakano — Apache 2.0.'),
-      h('p', null, 'Masterpiece+: SDXS‑512‑DreamShaper & its sketch ControlNet (Song et al., 2024; DreamShaper by Lykon), used under the CreativeML OpenRAIL++‑M licence. By using Masterpiece+ you agree to its use restrictions (no illegal, harmful, deceptive or harassing content). ', h('a', { href: 'models/mp/LICENSE-MODEL.txt', target: '_blank', rel: 'noopener', class: 'link' }, 'Read the licence'), '. Runtime: ONNX Runtime Web.'),
+      h('p', null, 'Masterpiece+: SDXS‑512‑DreamShaper & its sketch ControlNet (Song et al., 2024; DreamShaper by Lykon), used under the CreativeML OpenRAIL++‑M licence. By using Masterpiece+ you agree to its use restrictions (no illegal, harmful, deceptive or harassing content). ', h('a', { href: 'models/mp/LICENSE-MODEL.txt', target: '_blank', rel: 'noopener', class: 'link' }, 'Read the licence'), '. Line drawings by “Informative Drawings” (Chan et al., 2022, MIT). Runtime: ONNX Runtime Web.'),
       h('p', null, 'Reference artworks are public‑domain works sourced from Wikimedia Commons. Pixel Worlds textures are generated procedurally. Minecraft is a trademark of Mojang Synergies AB; ArtifyMe is not affiliated with Mojang or Microsoft.'),
     ),
     h('p', { class: 'home-foot' }, `ArtifyMe ${__APP_VERSION__}`),
