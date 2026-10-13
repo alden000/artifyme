@@ -13,6 +13,9 @@ const BASE = new URL('models/mp/', document.baseURI).href;
 const CHUNKS = 16;
 const CACHE = 'artifyme-mp-v1';
 const SIDE = 512;
+// v2: fp16 graph with fp32 timestep embedding + float Resize scales (v1 failed to load on phones).
+const GRAPH = { fp16: 'graph.f16.v2.onnx', fp32: 'graph.f32.v2.onnx' } as const;
+const STALE = ['graph.f16.onnx', 'graph.f32.onnx'];
 // scaled‑linear schedule, ᾱ at t = 999 (the model's single step)
 const AC999 = (() => {
   let ac = 1;
@@ -107,7 +110,7 @@ export async function mpDownload(onProgress: Progress) {
   await runWorker({ base: BASE, key: 'w16', chunks: CHUNKS, cacheName: CACHE, downloadOnly: true }, onProgress);
   // Warm the small files into the cache too.
   const c = await caches.open(CACHE);
-  await Promise.all(['graph.f16.onnx', 'graph.f32.onnx', 'vae_decoder.onnx', 'manifest.json'].map(async (f) => (await c.match(BASE + f)) || c.add(BASE + f).catch(() => {})));
+  await Promise.all([GRAPH.fp16, GRAPH.fp32, 'vae_decoder.onnx'].map(async (f) => (await c.match(BASE + f)) || c.add(BASE + f).catch(() => {})));
 }
 
 let ortP: Promise<typeof ORT> | null = null;
@@ -154,7 +157,8 @@ export function mpLoad(onProgress: Progress = () => {}): Promise<void> {
     const key = sup.precision === 'fp16' ? 'w16' : 'w32';
     const weights = await runWorker({ base: BASE, key, chunks: CHUNKS, cacheName: CACHE }, onProgress);
     onProgress('compile', 0);
-    const graph = await cachedBytes(sup.precision === 'fp16' ? 'graph.f16.onnx' : 'graph.f32.onnx');
+    caches.open(CACHE).then((c) => STALE.forEach((f) => c.delete(BASE + f))).catch(() => {});
+    const graph = await cachedBytes(GRAPH[sup.precision === 'fp16' ? 'fp16' : 'fp32']);
     const opts: ORT.InferenceSession.SessionOptions = { executionProviders: ['webgpu'], graphOptimizationLevel: 'all' };
     const unet = await ort.InferenceSession.create(graph, { ...opts, externalData: [{ path: 'w', data: new Uint8Array(weights!) }] });
     onProgress('compile', 0.8);
