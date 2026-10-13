@@ -74,8 +74,12 @@ export default function result(root: HTMLElement) {
   let video: HTMLVideoElement | null = null;
 
   if (r.kind === 'image') {
-    const before = h('img', { src: media.url, alt: 'Original' });
-    if (media.kind === 'video') before.setAttribute('src', media.still.toDataURL('image/jpeg', 0.9));
+    // Draw the original from the decoded still: a blob: URL can be revoked or point at a
+    // format <img> can't show (e.g. HEIC), which left this side blank on some phones.
+    const before = h('canvas', { 'aria-label': 'Original', role: 'img' });
+    before.width = media.still.width;
+    before.height = media.still.height;
+    before.getContext('2d')!.drawImage(media.still, 0, 0);
     const after = h('img', { src: r.url, alt: `Your photo in the style of ${r.style.name}`, class: r.style.kind === 'procedural' ? 'pixel' : '' });
     const cmp = compare(before, after, ar);
     stage = h('div', { class: 'result-stage reveal' }, cmp.el);

@@ -248,9 +248,9 @@ export default function studio(root: HTMLElement) {
           slider({
             label: 'Faithful ↔ Artistic',
             value: state.mp.strength,
-            min: 0.3,
-            max: 0.7,
-            format: (v) => (v < 0.4 ? 'Faithful' : v < 0.52 ? 'Balanced' : 'Artistic'),
+            min: 0.25,
+            max: 0.6,
+            format: (v) => (v < 0.33 ? 'Faithful' : v < 0.45 ? 'Balanced' : 'Artistic'),
             onInput: (v) => {
               state.mp.strength = v;
               persistSettings();

@@ -13,7 +13,9 @@ const BASE = new URL('models/mp2/', document.baseURI).href;
 const CHUNKS = 26;
 const CACHE = 'artifyme-mp-v2';
 const OLD_CACHES = ['artifyme-mp-v1'];
-const SIDE = 512;
+// 640 px: small subjects (a child in a wide shot) survive far better than at 512,
+// without 768's ~7× attention memory on phone GPUs.
+const SIDE = 640;
 const STEPS = 4;
 
 export interface Support {

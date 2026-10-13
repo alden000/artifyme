@@ -61,15 +61,15 @@ export const state = {
   customStyles: [] as ArtStyle[],
   settings: load<RenderSettings>('artifyme.settings', DEFAULT_SETTINGS),
   video: load<VideoSettings>('artifyme.video', { fps: 12, maxSide: 540 }),
-  // v3: image‑to‑image engine (strength replaces subject + sketch fidelity).
-  mp: load<MpSettings>('artifyme.mp3', { on: false, strength: 0.45, keepColors: false }),
+  // v4: faithful‑first default (0.35) after real‑photo testing.
+  mp: load<MpSettings>('artifyme.mp4', { on: false, strength: 0.35, keepColors: false }),
   mpSeed: 7,
 };
 
 export function persistSettings() {
   save('artifyme.settings', state.settings);
   save('artifyme.video', state.video);
-  save('artifyme.mp3', state.mp);
+  save('artifyme.mp4', state.mp);
 }
 
 export function currentStyle(): ArtStyle {
