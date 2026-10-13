@@ -4,6 +4,8 @@ import { haptic, toast } from '../ui/fx';
 import { back } from '../router';
 import { backendName, isModelLoaded, loadModel, MODEL_SIZES_MB, onModelProgress, type ModelKey } from '../ai/engine';
 import { canInstall, isStandalone, promptInstall } from '../pwa';
+import { MP_DOWNLOAD_MB, mpInstalled, mpRemove, mpSupport } from '../ai/masterpiece';
+import { ensureMpInstalled } from './mpflow';
 
 const MODEL_LABEL: Record<ModelKey, [string, string]> = {
   fast: ['Swift painter', 'Live previews & video'],
@@ -46,6 +48,31 @@ export default function about(root: HTMLElement) {
   const engine = h('span', { class: 'muted' }, '…');
   backendName().then((b) => (engine.textContent = b === 'webgl' ? 'GPU (WebGL)' : b.toUpperCase()));
 
+  const mpStatus = h('p', null, 'Checking this device…');
+  const mpBtn = h('button', { class: 'ghost-btn', hidden: true });
+  const refreshMp = async () => {
+    const sup = await mpSupport();
+    if (!sup.ok) {
+      mpStatus.textContent = `Not available on this device. ${sup.reason ?? ''}`;
+      mpBtn.hidden = true;
+      return;
+    }
+    const inst = await mpInstalled();
+    mpStatus.textContent = inst ? 'Installed — paints offline. Runs on your GPU (' + (sup.precision === 'fp16' ? 'half precision' : 'full precision') + ').' : `Supported here. One‑time ${MP_DOWNLOAD_MB} MB download.`;
+    mpBtn.hidden = false;
+    mpBtn.textContent = inst ? 'Remove from device' : 'Download painter';
+    mpBtn.onclick = async () => {
+      if (inst) {
+        if (!confirm('Remove the Masterpiece+ painter? You can download it again later.')) return;
+        await mpRemove();
+        toast('Masterpiece+ removed.', { icon: icons.check });
+      } else await ensureMpInstalled();
+      void refreshMp();
+    };
+  };
+  void refreshMp();
+  const mpCard = h('section', { class: 'card glow' }, h('h3', null, h('span', { html: icons.wand }), 'Masterpiece+'), h('p', null, 'A generative AI painter that redraws your photo in an artist’s hand. Runs fully on‑device with WebGPU.'), mpStatus, mpBtn);
+
   const installCard = isStandalone()
     ? null
     : h(
@@ -68,12 +95,14 @@ export default function about(root: HTMLElement) {
       h('p', null, 'Your photos and videos never leave this device. The AI runs inside your browser on your own graphics chip. No accounts, no uploads, no tracking. Your Collection is stored locally and can be deleted at any time.'),
     ),
     h('section', { class: 'card' }, h('h3', null, h('span', { html: icons.sparkle }), 'AI painters'), h('div', { class: 'models' }, rows.map((r) => r.el)), dl, h('p', { class: 'muted small' }, 'Engine: ', engine)),
+    mpCard,
     installCard ?? "",
     h(
       'section',
       { class: 'card' },
       h('h3', null, h('span', { html: icons.palette }), 'Credits'),
       h('p', null, 'Neural style transfer: Magenta “Arbitrary Image Stylization” (Ghiasi et al., 2017) via the TensorFlow.js port by Reiichiro Nakano — Apache 2.0.'),
+      h('p', null, 'Masterpiece+: SDXS‑512‑DreamShaper & its sketch ControlNet (Song et al., 2024; DreamShaper by Lykon), used under the CreativeML OpenRAIL++‑M licence. By using Masterpiece+ you agree to its use restrictions (no illegal, harmful, deceptive or harassing content). ', h('a', { href: 'models/mp/LICENSE-MODEL.txt', target: '_blank', rel: 'noopener', class: 'link' }, 'Read the licence'), '. Runtime: ONNX Runtime Web.'),
       h('p', null, 'Reference artworks are public‑domain works sourced from Wikimedia Commons. Pixel Worlds textures are generated procedurally. Minecraft is a trademark of Mojang Synergies AB; ArtifyMe is not affiliated with Mojang or Microsoft.'),
     ),
     h('p', { class: 'home-foot' }, `ArtifyMe ${__APP_VERSION__}`),

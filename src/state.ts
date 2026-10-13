@@ -1,5 +1,14 @@
 import { ALL_STYLES, type ArtStyle } from './data/styles';
 import { DEFAULT_SETTINGS, type RenderSettings } from './ai/pipeline';
+import type { Subject } from './ai/masterpiece';
+
+export interface MpSettings {
+  on: boolean;
+  subject: Subject;
+  /** ControlNet strength: how closely the painting follows the photo's lines. */
+  fidelity: number;
+  keepColors: boolean;
+}
 
 export interface Media {
   kind: 'image' | 'video';
@@ -22,6 +31,8 @@ export interface Result {
   canvas?: HTMLCanvasElement;
   poster?: HTMLCanvasElement;
   creationId?: string;
+  /** Present when produced by Masterpiece+ (enables "Paint again"). */
+  mpSeed?: number;
 }
 
 export interface VideoSettings {
@@ -52,11 +63,14 @@ export const state = {
   customStyles: [] as ArtStyle[],
   settings: load<RenderSettings>('artifyme.settings', DEFAULT_SETTINGS),
   video: load<VideoSettings>('artifyme.video', { fps: 12, maxSide: 540 }),
+  mp: load<MpSettings>('artifyme.mp', { on: false, subject: 'person', fidelity: 0.85, keepColors: false }),
+  mpSeed: 7,
 };
 
 export function persistSettings() {
   save('artifyme.settings', state.settings);
   save('artifyme.video', state.video);
+  save('artifyme.mp', state.mp);
 }
 
 export function currentStyle(): ArtStyle {

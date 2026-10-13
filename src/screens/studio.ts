@@ -2,7 +2,9 @@ import { h, pickFile } from '../ui/dom';
 import { icons } from '../ui/icons';
 import { haptic, ripple, setAccent, tilt, toast } from '../ui/fx';
 import { segmented, slider, toggle } from '../ui/controls';
-import { MASTERS, PIXEL_WORLDS, type ArtStyle } from '../data/styles';
+import { MASTERS, MP_STYLE_IDS, PIXEL_WORLDS, REIMAGINE, type ArtStyle } from '../data/styles';
+import { SUBJECTS, mpSupport } from '../ai/masterpiece';
+import { ensureMpInstalled } from './mpflow';
 import { back, go } from '../router';
 import { currentStyle, persistSettings, state } from '../state';
 import { isModelLoaded, loadModel, onModelProgress } from '../ai/engine';
@@ -12,7 +14,7 @@ import { createCustomStyle, loadCustomStyles, removeCustomStyle } from '../store
 import { loadMedia } from '../media/load';
 import { runRender } from './render';
 
-type Tab = 'masters' | 'pixel' | 'yours';
+type Tab = 'masters' | 'pixel' | 'yours' | 'reimagine';
 
 export default function studio(root: HTMLElement) {
   const media = state.media;
@@ -22,7 +24,13 @@ export default function studio(root: HTMLElement) {
   }
   state.customStyles = loadCustomStyles();
   let disposed = false;
-  let tab: Tab = currentStyle().kind === 'procedural' ? 'pixel' : currentStyle().id.startsWith('custom-') ? 'yours' : 'masters';
+  // Masterpiece+ works on photos only.
+  if (media.kind === 'video') state.mp.on = false;
+  const mpOn = () => state.mp.on && media.kind === 'image';
+  if (mpOn() && !MP_STYLE_IDS.has(state.styleId)) state.styleId = 'starry';
+  if (!mpOn() && currentStyle().kind === 'generative') state.styleId = 'starry';
+  const tabFor = (s: ArtStyle): Tab => (s.kind === 'procedural' ? 'pixel' : s.kind === 'generative' ? 'reimagine' : s.id.startsWith('custom-') ? 'yours' : 'masters');
+  let tab: Tab = tabFor(currentStyle());
 
   // ── Stage ───────────────────────────────────────────────
   const base: HTMLElement =
@@ -55,36 +63,104 @@ export default function studio(root: HTMLElement) {
 
   // ── Tabs + carousel ─────────────────────────────────────
   const tabsEl = h('div', { class: 'tabs', role: 'tablist' });
-  const tabDefs: { id: Tab; label: string; icon: string }[] = [
-    { id: 'masters', label: 'Masters', icon: icons.brush },
-    { id: 'pixel', label: 'Pixel Worlds', icon: icons.cube },
-    { id: 'yours', label: 'Your Style', icon: icons.wand },
-  ];
-  const tabInk = h('span', { class: 'tab-ink' });
-  tabsEl.append(tabInk);
-  const tabBtns = tabDefs.map((t, i) =>
+  function buildTabs() {
+    const tabDefs: { id: Tab; label: string; icon: string }[] = mpOn()
+      ? [
+          { id: 'masters', label: 'Masters', icon: icons.brush },
+          { id: 'reimagine', label: 'Reimagine', icon: icons.wand },
+        ]
+      : [
+          { id: 'masters', label: 'Masters', icon: icons.brush },
+          { id: 'pixel', label: 'Pixel Worlds', icon: icons.cube },
+          { id: 'yours', label: 'Your Style', icon: icons.wand },
+        ];
+    if (!tabDefs.some((t) => t.id === tab)) tab = 'masters';
+    tabsEl.style.setProperty('--n', String(tabDefs.length));
+    const tabBtns: HTMLButtonElement[] = tabDefs.map((t, i) =>
+      h(
+        'button',
+        {
+          class: 'tab',
+          role: 'tab',
+          onclick: () => {
+            if (tab === t.id) return;
+            haptic(6);
+            tab = t.id;
+            tabsEl.style.setProperty('--i', String(i));
+            tabBtns.forEach((b, j) => b.setAttribute('aria-selected', String(i === j)));
+            buildCarousel();
+          },
+        },
+        h('span', { html: t.icon }),
+        t.label,
+      ),
+    );
+    tabsEl.replaceChildren(h('span', { class: 'tab-ink' }), ...tabBtns);
+    const tabIndex = tabDefs.findIndex((t) => t.id === tab);
+    tabsEl.style.setProperty('--i', String(tabIndex));
+    tabBtns.forEach((b, j) => b.setAttribute('aria-selected', String(tabIndex === j)));
+  }
+
+  // ── Classic / Masterpiece+ switch ───────────────────────
+  const modeEl = h('div', { class: 'mode', role: 'radiogroup', 'aria-label': 'Engine' });
+  const modeClassic = h('button', { class: 'mode-opt', role: 'radio' }, h('b', null, 'Classic'), h('small', null, media.kind === 'video' ? 'Photos & videos' : 'Instant styles'));
+  const modeMp = h('button', { class: 'mode-opt mode-mp', role: 'radio', disabled: media.kind === 'video' }, h('b', null, h('span', { html: icons.sparkle }), 'Masterpiece+'), h('small', null, media.kind === 'video' ? 'Photos only' : 'AI redraws you'));
+  modeEl.append(h('span', { class: 'mode-thumb' }), modeClassic, modeMp);
+  const paintMode = () => {
+    modeEl.classList.toggle('mp', mpOn());
+    modeClassic.setAttribute('aria-checked', String(!mpOn()));
+    modeMp.setAttribute('aria-checked', String(mpOn()));
+    root.classList.toggle('mp-mode', mpOn());
+  };
+  async function setMode(on: boolean) {
+    if (on === mpOn()) return;
+    haptic(8);
+    if (on) {
+      const ok = await ensureMpInstalled();
+      if (!ok || disposed) return;
+    }
+    state.mp.on = on;
+    persistSettings();
+    if (on && !MP_STYLE_IDS.has(state.styleId)) state.styleId = 'starry';
+    if (!on && currentStyle().kind === 'generative') state.styleId = 'starry';
+    tab = tabFor(currentStyle());
+    paintMode();
+    buildTabs();
+    buildCarousel();
+    buildTune();
+    renderMeta(true);
+    updateCta();
+    subjectsEl.hidden = !mpOn();
+    schedulePreview(0);
+  }
+  modeClassic.addEventListener('click', () => setMode(false));
+  modeMp.addEventListener('click', () => setMode(true));
+  if (media.kind === 'image')
+    void mpSupport().then((sup) => {
+      if (sup.ok) return;
+      modeMp.classList.add('unsupported');
+      modeMp.querySelector('small')!.textContent = 'Not on this device';
+    });
+
+  // ── What's in your photo? (Masterpiece+) ────────────────
+  const subjectsEl = h('div', { class: 'subjects', hidden: !mpOn() });
+  const subjectBtns = SUBJECTS.map((sj) =>
     h(
       'button',
       {
-        class: 'tab',
-        role: 'tab',
+        class: 'subject',
+        'aria-pressed': String(state.mp.subject === sj.id),
         onclick: () => {
-          if (tab === t.id) return;
-          haptic(6);
-          tab = t.id;
-          tabsEl.style.setProperty('--i', String(i));
-          tabBtns.forEach((b, j) => b.setAttribute('aria-selected', String(i === j)));
-          buildCarousel();
+          haptic(5);
+          state.mp.subject = sj.id;
+          persistSettings();
+          subjectBtns.forEach((b, i) => b.setAttribute('aria-pressed', String(SUBJECTS[i].id === sj.id)));
         },
       },
-      h('span', { html: t.icon }),
-      t.label,
+      sj.label,
     ),
   );
-  tabsEl.append(...tabBtns);
-  const tabIndex = tabDefs.findIndex((t) => t.id === tab);
-  tabsEl.style.setProperty('--i', String(tabIndex));
-  tabBtns.forEach((b, j) => b.setAttribute('aria-selected', String(tabIndex === j)));
+  subjectsEl.append(h('span', { class: 'subjects-label' }, 'In your photo'), h('div', { class: 'subjects-row' }, ...subjectBtns));
 
   const carousel = h('div', { class: 'carousel', role: 'listbox', 'aria-label': 'Art styles' });
 
@@ -138,7 +214,7 @@ export default function studio(root: HTMLElement) {
   function buildCarousel() {
     carousel.classList.remove('in');
     carousel.replaceChildren();
-    const list = tab === 'masters' ? MASTERS : tab === 'pixel' ? PIXEL_WORLDS : state.customStyles;
+    const list = tab === 'masters' ? MASTERS : tab === 'pixel' ? PIXEL_WORLDS : tab === 'reimagine' ? REIMAGINE : state.customStyles;
     if (tab === 'yours') carousel.append(addCard());
     list.forEach((s) => carousel.append(card(s)));
     if (tab === 'yours' && !list.length) {
@@ -185,6 +261,35 @@ export default function studio(root: HTMLElement) {
 
   function buildTune() {
     const s = currentStyle();
+    if (mpOn()) {
+      tune.replaceChildren(
+        h(
+          'div',
+          { class: 'tune-inner' },
+          slider({
+            label: 'Faithful to your photo',
+            value: state.mp.fidelity,
+            min: 0.55,
+            max: 1,
+            format: (v) => (v < 0.7 ? 'Loose' : v < 0.88 ? 'Balanced' : 'Faithful'),
+            onInput: (v) => {
+              state.mp.fidelity = v;
+              persistSettings();
+            },
+          }),
+          toggle({
+            label: 'Keep my colours',
+            hint: 'Hair, skin & clothing keep their real colours',
+            value: state.mp.keepColors,
+            onChange: (v) => {
+              state.mp.keepColors = v;
+              persistSettings();
+            },
+          }),
+        ),
+      );
+      return;
+    }
     const kids: HTMLElement[] = [
       slider({
         label: 'Intensity',
@@ -285,10 +390,17 @@ export default function studio(root: HTMLElement) {
 
   // ── CTA ─────────────────────────────────────────────────
   const ctaHint = h('small');
-  const cta = ripple(h('button', { class: 'cta', onclick: () => artify() }, h('span', { class: 'cta-ico', html: icons.sparkle }), h('span', { class: 'cta-txt' }, h('b', null, 'Artify'), ctaHint), h('i', { class: 'cta-shine' })));
+  const ctaB = h('b', null, 'Artify');
+  const cta = ripple(h('button', { class: 'cta', onclick: () => artify() }, h('span', { class: 'cta-ico', html: icons.sparkle }), h('span', { class: 'cta-txt' }, ctaB, ctaHint), h('i', { class: 'cta-shine' })));
 
   function updateCta() {
     const s = currentStyle();
+    if (mpOn()) {
+      ctaB.textContent = 'Paint';
+      ctaHint.textContent = 'Masterpiece+ · redrawn on‑device';
+      return;
+    }
+    ctaB.textContent = 'Artify';
     if (media!.kind === 'video') {
       const secs = Math.min(15, media!.duration ?? 0);
       ctaHint.textContent = `${Math.round(secs)}s · ${state.video.fps} fps · ${state.video.maxSide}p`;
@@ -306,6 +418,12 @@ export default function studio(root: HTMLElement) {
   async function runPreview() {
     const token = ++previewToken;
     const s = currentStyle();
+    if (mpOn()) {
+      // The generative painter runs only on request; show the photo cleanly.
+      preview.classList.remove('show');
+      frame.classList.remove('busy');
+      return;
+    }
     frame.classList.add('busy');
     try {
       if (s.kind === 'neural' && !isModelLoaded('fast')) pill.hidden = false;
@@ -338,7 +456,7 @@ export default function studio(root: HTMLElement) {
     state.styleId = s.id;
     carousel.querySelectorAll('.style-card').forEach((c) => c.setAttribute('aria-selected', String((c as HTMLElement).dataset.id === s.id)));
     renderMeta(true);
-    if (prevKind !== s.kind) buildTune();
+    if (prevKind !== s.kind || mpOn()) buildTune();
     updateCta();
     schedulePreview();
   }
@@ -388,13 +506,17 @@ export default function studio(root: HTMLElement) {
   root.append(
     h('header', { class: 'topbar' }, h('button', { class: 'icon-btn', 'aria-label': 'Back', onclick: () => back(), html: icons.back }), h('div', { class: 'topbar-title' }, h('span', { class: 'eyebrow' }, media.kind === 'video' ? 'Motion atelier' : 'Atelier')), tuneToggle),
     stage,
+    modeEl,
     meta,
     tabsEl,
     carousel,
+    subjectsEl,
     tune,
     h('div', { class: 'cta-wrap' }, cta),
   );
 
+  paintMode();
+  buildTabs();
   renderMeta();
   buildTune();
   buildCarousel();

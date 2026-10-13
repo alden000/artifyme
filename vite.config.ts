@@ -44,13 +44,20 @@ export default defineConfig({
         runtimeCaching: [
           {
             // AI weights are big: cache them on first use, then serve forever offline.
-            urlPattern: ({ url }) => url.pathname.includes('/models/'),
+            // Masterpiece+ manages its own cache (artifyme-mp-v1) — don't store its 500 MB twice.
+            urlPattern: ({ url }) => url.pathname.includes('/models/') && !url.pathname.includes('/models/mp/'),
             handler: 'CacheFirst',
             options: {
               cacheName: 'artifyme-models-v1',
               expiration: { maxEntries: 40 },
               cacheableResponse: { statuses: [0, 200] },
             },
+          },
+          {
+            // AI runtime (WebAssembly) for Masterpiece+.
+            urlPattern: ({ url }) => url.pathname.endsWith('.wasm'),
+            handler: 'CacheFirst',
+            options: { cacheName: 'artifyme-runtime-v1', cacheableResponse: { statuses: [0, 200] } },
           },
         ],
       },

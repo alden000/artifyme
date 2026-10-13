@@ -2,7 +2,7 @@ import bottlenecks from './bottlenecks.json';
 import palettes from './palettes.json';
 import { DEFAULT_FINISH, type Finish, type Palette, type Surface } from '../ai/finish';
 
-export type StyleKind = 'neural' | 'procedural';
+export type StyleKind = 'neural' | 'procedural' | 'generative';
 export type Procedural = 'minecraft' | 'arcade' | 'bricks';
 
 export interface ArtStyle {
@@ -141,6 +141,30 @@ export const PIXEL_WORLDS: ArtStyle[] = [
   },
 ];
 
-export const ALL_STYLES = [...MASTERS, ...PIXEL_WORLDS];
+// Masterpiece+ only: no single source painting — the generative model draws these.
+const gen = (id: string, name: string, artist: string, movement: string, accent: string, blurb: string): ArtStyle => ({
+  id,
+  kind: 'generative',
+  name,
+  artist,
+  year: 'Masterpiece+',
+  movement,
+  accent,
+  blurb,
+  thumb: `styles/mp-${id}.webp`,
+});
+export const REIMAGINE: ArtStyle[] = [
+  gen('anime', 'Anime', 'Cel‑shaded illustration', 'Anime', '#b48cff', 'Clean line art, luminous cel shading.'),
+  gen('cartoon3d', '3D Cartoon', 'Animated feature look', '3D animation', '#5aa9ff', 'Big expressive eyes, soft studio lighting.'),
+  gen('comic', 'Comic Book', 'Ink & halftone', 'Graphic novel', '#ff5a4f', 'Bold inks, halftone dots, flat colour.'),
+  gen('sketch', 'Pencil Sketch', 'Graphite on paper', 'Drawing', '#c9c3b6', 'Hand‑drawn graphite with cross‑hatching.'),
+  gen('watercolor', 'Watercolour', 'Wet‑on‑wet washes', 'Watercolour', '#ff9fb8', 'Soft bleeding pigments on cold‑press paper.'),
+  gen('popart', 'Pop Art', '1960s screen print', 'Pop art', '#ffd23f', 'Flat colour, thick outlines, Ben‑Day dots.'),
+];
+
+/** Styles the Masterpiece+ engine has prompt embeddings for. */
+export const MP_STYLE_IDS = new Set([...MASTERS.map((m) => m.id), ...REIMAGINE.map((r) => r.id)]);
+
+export const ALL_STYLES = [...MASTERS, ...PIXEL_WORLDS, ...REIMAGINE];
 
 export const findStyle = (id: string) => ALL_STYLES.find((s) => s.id === id);

@@ -1,0 +1,41 @@
+# Masterpiece+ prompts. Subject-neutral: they describe HOW to paint, the photo supplies WHAT.
+P = {
+ "starry": "a painting by Vincent van Gogh in the style of The Starry Night, post-impressionist oil painting, thick impasto, swirling expressive brushstrokes, ultramarine and chrome yellow",
+ "sunflowers": "a painting by Vincent van Gogh, post-impressionist oil painting, thick impasto brushstrokes, vivid yellow and ochre palette",
+ "cypress": "a painting by Vincent van Gogh, wheat field with cypresses style, swirling clouds, energetic impasto oil brushstrokes",
+ "wave": "a Japanese ukiyo-e woodblock print by Katsushika Hokusai, The Great Wave style, flat colours, bold outlines, prussian blue, edo period",
+ "kiss": "a painting by Gustav Klimt, art nouveau, gold leaf, ornate mosaic patterns, The Kiss style, opulent decorative symbolism",
+ "scream": "an expressionist painting by Edvard Munch, The Scream style, calm expression, swirling blood orange sky, undulating wavy brushstrokes, tempera and pastel on cardboard",
+ "kandinsky": "an abstract painting by Wassily Kandinsky, Composition VII, explosive colourful shapes and lines, expressive abstraction",
+ "monet": "an impressionist painting by Claude Monet, Impression Sunrise style, loose broken brushstrokes, hazy atmospheric light",
+ "lilies": "an impressionist painting by Claude Monet, water lilies style, soft dappled brushstrokes, violet and green reflections",
+ "gris": "an analytic cubist painting by Juan Gris, fragmented geometric planes, muted earth tones, cubism",
+ "mondrian": "a painting in the style of Piet Mondrian, de stijl, geometric grid, black lines, primary colour blocks of red blue and yellow",
+ "seurat": "a pointillist painting by Georges Seurat, A Sunday on La Grande Jatte style, composed of tiny dots of colour, pointillism",
+ "mucha": "an art nouveau poster illustration by Alphonse Mucha, flowing lines, decorative halo, soft pastel colours, elegant ornament",
+ "marc": "an expressionist painting by Franz Marc, fractured prismatic shapes, vivid crimson and cobalt blue, der blaue reiter",
+ "schiele": "an expressionist drawing by Egon Schiele, raw angular contour lines, gouache and watercolour on paper, nervous linework",
+ "hiroshige": "a Japanese ukiyo-e woodblock print by Utagawa Hiroshige, bold silhouettes, graduated bokashi sky, flat colours",
+ "rousseau": "a naive art painting by Henri Rousseau, The Dream style, lush stylised jungle foliage, flat colours, primitivism",
+ "rembrandt": "a baroque oil painting by Rembrandt, dramatic chiaroscuro, warm golden light, dark background, Dutch golden age portrait",
+ "vermeer": "an oil painting by Johannes Vermeer, Dutch golden age, soft window light, pearlescent luminous colours, fine glazes",
+ "davinci": "a Renaissance oil painting by Leonardo da Vinci, sfumato, soft hazy modelling, muted earth palette, aged varnish on wood panel",
+ "bosch": "a painting by Hieronymus Bosch, surreal northern renaissance fantasy, jewel-toned detailed oil on panel",
+ # Reimagine (no single artist)
+ "anime": "anime illustration, cel shaded, clean line art, vibrant colours, detailed hand-painted anime background, beautiful anime style",
+ "cartoon3d": "3d animated movie character, stylised cartoon, smooth shading, expressive big eyes, cute, pixar-like 3d render",
+ "comic": "comic book illustration, bold black ink outlines, halftone dots, flat vivid colours, graphic novel art",
+ "sketch": "detailed graphite pencil sketch, hand drawn, cross hatching, charcoal shading on paper, black and white drawing",
+ "watercolor": "loose watercolour painting, wet on wet, soft bleeding pigments, paper texture, delicate washes",
+ "popart": "pop art, bold flat colours, thick black outlines, Ben-Day dots, 1960s screen print style",
+}
+
+SUBJECTS = {
+ "person": "a portrait of a person",
+ "people": "a group of people",
+ "dog": "a dog",
+ "cat": "a cat",
+ "landscape": "a landscape scenery",
+ "city": "a city with buildings",
+ "object": "a still life of an object",
+}

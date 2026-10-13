@@ -7,6 +7,8 @@ import { QUALITY, renderStyle } from '../ai/pipeline';
 import { stylizeVideo } from '../media/video';
 import { canvasToBlob } from '../media/save';
 import { addCreation, newId } from '../store/gallery';
+import { mpLoad, mpPaint, mpReady } from '../ai/masterpiece';
+import { MP_STYLE_IDS } from '../data/styles';
 
 const LINES = [
   'Grinding the pigments…',
@@ -74,7 +76,7 @@ export async function runRender(): Promise<boolean> {
     h(
       'div',
       { class: 'render-body' },
-      h('p', { class: 'eyebrow' }, h('i', { class: 'dot' }), `After ${style.artist}`),
+      h('p', { class: 'eyebrow' }, h('i', { class: 'dot' }), style.kind === 'generative' ? 'Masterpiece+' : `After ${style.artist}`),
       h('h2', { class: 'render-title' }, style.name),
       frameEl,
       h('div', { class: 'render-meter' }, ring, status),
@@ -99,7 +101,37 @@ export async function runRender(): Promise<boolean> {
   let offProgress = () => {};
   let simTimer = 0;
   try {
-    if (media.kind === 'image') {
+    if (media.kind === 'image' && state.mp.on && MP_STYLE_IDS.has(style.id)) {
+      // Masterpiece+: unpack & compile the painter (first time per session), then paint.
+      const wasReady = mpReady();
+      if (!wasReady) {
+        say('Waking the painter…');
+        await mpLoad((phase, p) => {
+          if (phase === 'download') setP(p * 0.45);
+          else if (phase === 'unpack') setP(0.45 + p * 0.3);
+          else setP(0.75 + p * 0.1);
+          if (phase === 'compile' && p === 0) say('Preparing the canvas on your GPU…');
+        });
+      }
+      if (abort.signal.aborted) throw new DOMException('Cancelled', 'AbortError');
+      let fake = wasReady ? 0.08 : 0.85;
+      simTimer = window.setInterval(() => {
+        fake += (0.97 - fake) * 0.05;
+        setP(fake);
+      }, 150);
+      say(style.kind === 'generative' ? `Drawing you as ${style.name.toLowerCase()}…` : `Redrawing you in the hand of ${style.artist.split(' ').slice(-1)[0]}…`);
+      await sleep(60);
+      const seed = state.mpSeed;
+      const out = await mpPaint(media.still, { style: style.id, subject: state.mp.subject, fidelity: state.mp.fidelity, keepColors: state.mp.keepColors, seed });
+      if (abort.signal.aborted) throw new DOMException('Cancelled', 'AbortError');
+      clearInterval(simTimer);
+      setP(1);
+      say('Signed & varnished.');
+      const blob = await canvasToBlob(out, 'image/jpeg', 0.93);
+      const id = newId();
+      setResult({ kind: 'image', blob, url: URL.createObjectURL(blob), width: out.width, height: out.height, style, canvas: out, creationId: id, mpSeed: seed });
+      void addCreation({ id, kind: 'image', styleId: style.id, styleName: style.name, createdAt: Date.now(), blob, thumb: await makeThumb(out), width: out.width, height: out.height }).catch(() => {});
+    } else if (media.kind === 'image') {
       // Phase 1 — model download (real progress), Phase 2 — painting (estimated).
       const modelKey = style.kind === 'neural' ? QUALITY[state.settings.quality].model : null;
       if (modelKey && !isModelLoaded(modelKey)) {

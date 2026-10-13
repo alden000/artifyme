@@ -138,6 +138,22 @@ export default function result(root: HTMLElement) {
           'Share',
         )
       : null,
+    r.mpSeed !== undefined
+      ? h(
+          'button',
+          {
+            class: 'action',
+            onclick: async () => {
+              haptic(10);
+              state.mpSeed = (Math.random() * 1e9) | 0;
+              const { runRender } = await import('./render');
+              if (await runRender()) go('result', { replace: true });
+            },
+          },
+          h('span', { html: icons.refresh }),
+          'Paint again',
+        )
+      : null,
     h('button', { class: 'action', onclick: () => back('studio') }, h('span', { html: icons.palette }), 'Restyle'),
     h('button', { class: 'action', onclick: () => go('gallery') }, h('span', { html: icons.gallery }), 'Collection'),
     h('button', { class: 'action', onclick: () => go('home') }, h('span', { html: icons.plus }), 'New'),
@@ -148,9 +164,9 @@ export default function result(root: HTMLElement) {
     'div',
     { class: 'placard' },
     h('p', { class: 'placard-no' }, `ArtifyMe Collection · No. ${no}`),
-    h('h1', { class: 'placard-title' }, h('em', null, 'Untitled'), `, after ${r.style.name}`),
+    h('h1', { class: 'placard-title' }, h('em', null, 'Untitled'), r.style.kind === 'generative' ? `, ${r.style.name.toLowerCase()}` : `, after ${r.style.name}`),
     h('p', { class: 'placard-sub' }, `${r.style.artist} (${r.style.year}) · ${r.style.movement}`),
-    h('p', { class: 'placard-medium' }, `${r.style.kind === 'neural' ? 'Neural pigment' : 'Procedural pixels'} on device, ${new Date().getFullYear()}`),
+    h('p', { class: 'placard-medium' }, `${r.mpSeed !== undefined ? 'Redrawn by Masterpiece+' : r.style.kind === 'neural' ? 'Neural pigment' : 'Procedural pixels'} on device, ${new Date().getFullYear()}`),
   );
 
   root.append(
