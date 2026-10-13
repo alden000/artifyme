@@ -611,16 +611,6 @@ html[data-nav='back']::view-transition-new(screen) { animation: vtInBack 0.62s v
 }
 .mp-mode .stage-hint { display: none; }
 
-.subjects { margin: 2px 0 6px; }
-.subjects-label { display: block; font-size: 11px; font-weight: 700; letter-spacing: 0.2em; text-transform: uppercase; color: var(--gold); margin: 0 2px 8px; }
-.subjects-row { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; margin: 0 -20px; padding: 0 20px 4px; }
-.subjects-row::-webkit-scrollbar { display: none; }
-.subject {
-  flex: none; height: 36px; padding: 0 15px; border-radius: 999px; font-size: 13px; font-weight: 650; color: var(--muted);
-  background: rgba(255, 255, 255, 0.04); border: 1px solid var(--line); transition: all 0.3s var(--ease);
-}
-.subject[aria-pressed='true'] { color: #1a1206; background: var(--gold-grad); border-color: transparent; box-shadow: 0 8px 18px -8px rgba(227, 189, 120, 0.8); }
-
 /* bottom sheet */
 .sheet { position: fixed; inset: 0; z-index: 65; }
 .sheet-backdrop { position: absolute; inset: 0; background: rgba(5, 4, 8, 0.6); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); opacity: 0; transition: opacity 0.45s var(--ease); }

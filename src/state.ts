@@ -1,12 +1,10 @@
 import { ALL_STYLES, type ArtStyle } from './data/styles';
 import { DEFAULT_SETTINGS, type RenderSettings } from './ai/pipeline';
-import type { Subject } from './ai/masterpiece';
 
 export interface MpSettings {
   on: boolean;
-  subject: Subject;
-  /** ControlNet strength: how closely the painting follows the photo's lines. */
-  fidelity: number;
+  /** img2img strength: 0.3 keeps the photo, 0.7 lets the artist take over. */
+  strength: number;
   keepColors: boolean;
 }
 
@@ -63,15 +61,15 @@ export const state = {
   customStyles: [] as ArtStyle[],
   settings: load<RenderSettings>('artifyme.settings', DEFAULT_SETTINGS),
   video: load<VideoSettings>('artifyme.video', { fps: 12, maxSide: 540 }),
-  // v2 key: new subject list (woman/man/child…) and stronger default fidelity.
-  mp: load<MpSettings>('artifyme.mp2', { on: false, subject: 'woman', fidelity: 1, keepColors: false }),
+  // v3: image‑to‑image engine (strength replaces subject + sketch fidelity).
+  mp: load<MpSettings>('artifyme.mp3', { on: false, strength: 0.45, keepColors: false }),
   mpSeed: 7,
 };
 
 export function persistSettings() {
   save('artifyme.settings', state.settings);
   save('artifyme.video', state.video);
-  save('artifyme.mp2', state.mp);
+  save('artifyme.mp3', state.mp);
 }
 
 export function currentStyle(): ArtStyle {

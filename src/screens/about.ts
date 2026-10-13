@@ -58,7 +58,7 @@ export default function about(root: HTMLElement) {
       return;
     }
     const inst = await mpInstalled();
-    mpStatus.textContent = inst ? 'Installed — paints offline. Runs on your GPU (' + (sup.precision === 'fp16' ? 'half precision' : 'full precision') + ').' : `Supported here. One‑time ${MP_DOWNLOAD_MB} MB download.`;
+    mpStatus.textContent = inst ? 'Installed — paints offline on your GPU.' : `Supported here. One‑time ${MP_DOWNLOAD_MB} MB download.`;
     mpBtn.hidden = false;
     mpBtn.textContent = inst ? 'Remove from device' : 'Download painter';
     mpBtn.onclick = async () => {
@@ -102,7 +102,7 @@ export default function about(root: HTMLElement) {
       { class: 'card' },
       h('h3', null, h('span', { html: icons.palette }), 'Credits'),
       h('p', null, 'Neural style transfer: Magenta “Arbitrary Image Stylization” (Ghiasi et al., 2017) via the TensorFlow.js port by Reiichiro Nakano — Apache 2.0.'),
-      h('p', null, 'Masterpiece+: SDXS‑512‑DreamShaper & its sketch ControlNet (Song et al., 2024; DreamShaper by Lykon), used under the CreativeML OpenRAIL++‑M licence. By using Masterpiece+ you agree to its use restrictions (no illegal, harmful, deceptive or harassing content). ', h('a', { href: 'models/mp/LICENSE-MODEL.txt', target: '_blank', rel: 'noopener', class: 'link' }, 'Read the licence'), '. Line drawings by “Informative Drawings” (Chan et al., 2022, MIT). Runtime: ONNX Runtime Web.'),
+      h('p', null, 'Masterpiece+: LCM‑DreamShaper‑v7 (Latent Consistency Models, Luo et al., 2023; DreamShaper by Lykon; based on Stable Diffusion 1.5) with the SDXS tiny autoencoder, used under CreativeML OpenRAIL licences. By using Masterpiece+ you agree to its use restrictions (no illegal, harmful, deceptive or harassing content). ', h('a', { href: 'models/mp2/LICENSE-MODEL.txt', target: '_blank', rel: 'noopener', class: 'link' }, 'Read the licence'), '. Runtime: ONNX Runtime Web.'),
       h('p', null, 'Reference artworks are public‑domain works sourced from Wikimedia Commons. Pixel Worlds textures are generated procedurally. Minecraft is a trademark of Mojang Synergies AB; ArtifyMe is not affiliated with Mojang or Microsoft.'),
     ),
     h('p', { class: 'home-foot' }, `ArtifyMe ${__APP_VERSION__}`),

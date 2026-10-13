@@ -122,7 +122,16 @@ export async function runRender(): Promise<boolean> {
       say(style.kind === 'generative' ? `Drawing you as ${style.name.toLowerCase()}…` : `Redrawing you in the hand of ${style.artist.split(' ').slice(-1)[0]}…`);
       await sleep(60);
       const seed = state.mpSeed;
-      const out = await mpPaint(media.still, { style: style.id, subject: state.mp.subject, fidelity: state.mp.fidelity, keepColors: state.mp.keepColors, seed });
+      const out = await mpPaint(media.still, {
+        style: style.id,
+        strength: state.mp.strength,
+        keepColors: state.mp.keepColors,
+        seed,
+        onStep: (i, n) => {
+          fake = Math.max(fake, (wasReady ? 0.05 : 0.85) + ((wasReady ? 0.9 : 0.12) * i) / n);
+          setP(fake);
+        },
+      });
       if (abort.signal.aborted) throw new DOMException('Cancelled', 'AbortError');
       clearInterval(simTimer);
       setP(1);

@@ -3,7 +3,7 @@ import { icons } from '../ui/icons';
 import { haptic, ripple, setAccent, tilt, toast } from '../ui/fx';
 import { segmented, slider, toggle } from '../ui/controls';
 import { MASTERS, MP_STYLE_IDS, PIXEL_WORLDS, REIMAGINE, type ArtStyle } from '../data/styles';
-import { SUBJECTS, mpSupport } from '../ai/masterpiece';
+import { mpSupport } from '../ai/masterpiece';
 import { ensureMpInstalled } from './mpflow';
 import { back, go } from '../router';
 import { currentStyle, persistSettings, state } from '../state';
@@ -130,7 +130,6 @@ export default function studio(root: HTMLElement) {
     buildTune();
     renderMeta(true);
     updateCta();
-    subjectsEl.hidden = !mpOn();
     schedulePreview(0);
   }
   modeClassic.addEventListener('click', () => setMode(false));
@@ -141,26 +140,6 @@ export default function studio(root: HTMLElement) {
       modeMp.classList.add('unsupported');
       modeMp.querySelector('small')!.textContent = 'Not on this device';
     });
-
-  // ── What's in your photo? (Masterpiece+) ────────────────
-  const subjectsEl = h('div', { class: 'subjects', hidden: !mpOn() });
-  const subjectBtns = SUBJECTS.map((sj) =>
-    h(
-      'button',
-      {
-        class: 'subject',
-        'aria-pressed': String(state.mp.subject === sj.id),
-        onclick: () => {
-          haptic(5);
-          state.mp.subject = sj.id;
-          persistSettings();
-          subjectBtns.forEach((b, i) => b.setAttribute('aria-pressed', String(SUBJECTS[i].id === sj.id)));
-        },
-      },
-      sj.label,
-    ),
-  );
-  subjectsEl.append(h('span', { class: 'subjects-label' }, 'In your photo'), h('div', { class: 'subjects-row' }, ...subjectBtns));
 
   const carousel = h('div', { class: 'carousel', role: 'listbox', 'aria-label': 'Art styles' });
 
@@ -267,13 +246,13 @@ export default function studio(root: HTMLElement) {
           'div',
           { class: 'tune-inner' },
           slider({
-            label: 'Faithful to your photo',
-            value: state.mp.fidelity,
-            min: 0.6,
-            max: 1.3,
-            format: (v) => (v < 0.8 ? 'Loose' : v < 1.05 ? 'Balanced' : 'Strict'),
+            label: 'Faithful ↔ Artistic',
+            value: state.mp.strength,
+            min: 0.3,
+            max: 0.7,
+            format: (v) => (v < 0.4 ? 'Faithful' : v < 0.52 ? 'Balanced' : 'Artistic'),
             onInput: (v) => {
-              state.mp.fidelity = v;
+              state.mp.strength = v;
               persistSettings();
             },
           }),
@@ -510,7 +489,6 @@ export default function studio(root: HTMLElement) {
     meta,
     tabsEl,
     carousel,
-    subjectsEl,
     tune,
     h('div', { class: 'cta-wrap' }, cta),
   );

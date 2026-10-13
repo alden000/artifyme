@@ -1,45 +1,24 @@
 // Masterpiece+ — on‑device generative repainting.
 //
-// A one‑step latent diffusion model (SDXS‑512‑DreamShaper, OpenRAIL++) guided by
-// a sketch ControlNet. The photo is reduced to an ink drawing, and the model
-// *redraws* it in the chosen artist's hand — new brushwork, new forms, the
-// artist's own way of depicting a face — rather than recolouring the photo.
-// Runs with onnxruntime‑web on WebGPU. Nothing is uploaded.
+// Image‑to‑image with a Latent Consistency Model (LCM‑DreamShaper‑v7): the photo
+// itself is encoded, partly re‑noised and repainted in 4 steps, so the result keeps
+// your scene — layout, pose, lighting, colours — while the brushwork, forms and
+// palette move toward the chosen style. Runs with onnxruntime‑web on WebGPU.
+// Nothing is uploaded.
 import type * as ORT from 'onnxruntime-web';
+import { lcmImg2Img } from './lcm';
 
-export const MP_DOWNLOAD_MB = 555; // weights + runtime + decoder + line‑art model
-const BASE = new URL('models/mp/', document.baseURI).href;
-const CHUNKS = 16;
-const CACHE = 'artifyme-mp-v1';
+export const MP_DOWNLOAD_MB = 900; // UNet weights + runtime + autoencoder
+const BASE = new URL('models/mp2/', document.baseURI).href;
+const CHUNKS = 26;
+const CACHE = 'artifyme-mp-v2';
+const OLD_CACHES = ['artifyme-mp-v1'];
 const SIDE = 512;
-// v2: fp16 graph with fp32 timestep embedding + float Resize scales (v1 failed to load on phones).
-const GRAPH = { fp16: 'graph.f16.v2.onnx', fp32: 'graph.f32.v2.onnx' } as const;
-const STALE = ['graph.f16.onnx', 'graph.f32.onnx'];
-// scaled‑linear schedule, ᾱ at t = 999 (the model's single step)
-const AC999 = (() => {
-  let ac = 1;
-  const b0 = Math.sqrt(0.00085), b1 = Math.sqrt(0.012);
-  for (let i = 0; i < 1000; i++) ac *= 1 - (b0 + ((b1 - b0) * i) / 999) ** 2;
-  return ac;
-})();
-
-export const SUBJECTS = [
-  { id: 'woman', label: 'Woman' },
-  { id: 'man', label: 'Man' },
-  { id: 'child', label: 'Child' },
-  { id: 'people', label: 'People' },
-  { id: 'dog', label: 'Dog' },
-  { id: 'cat', label: 'Cat' },
-  { id: 'landscape', label: 'Landscape' },
-  { id: 'city', label: 'City' },
-  { id: 'object', label: 'Object' },
-] as const;
-export type Subject = (typeof SUBJECTS)[number]['id'];
+const STEPS = 4;
 
 export interface Support {
   ok: boolean;
   reason?: string;
-  precision?: 'fp16' | 'fp32';
 }
 
 let supportP: Promise<Support> | null = null;
@@ -50,11 +29,11 @@ export function mpSupport(): Promise<Support> {
     const adapter = await gpu.requestAdapter({ powerPreference: 'high-performance' }).catch(() => null);
     if (!adapter) return { ok: false, reason: 'No compatible graphics chip found.' };
     const mem = (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
-    if (mem && mem < 4) return { ok: false, reason: 'Needs a phone with at least 6 GB of memory.' };
-    const f16 = adapter.features.has('shader-f16');
-    if (!f16 && isPhone()) return { ok: false, reason: 'Your graphics chip lacks half‑precision support.' };
+    if (mem && mem < 6) return { ok: false, reason: 'Needs a device with at least 8 GB of memory.' };
+    // The painter is 1.7 GB in half precision; full precision would not fit in a browser.
+    if (!adapter.features.has('shader-f16')) return { ok: false, reason: 'Your graphics chip lacks half‑precision support.' };
     if (adapter.limits.maxBufferSize < 256 * 1024 * 1024) return { ok: false, reason: 'Graphics memory limits are too small.' };
-    return { ok: true, precision: f16 ? 'fp16' : 'fp32' };
+    return { ok: true };
   })();
   return supportP;
 }
@@ -62,7 +41,11 @@ interface GPUAdapterLike {
   features: { has(f: string): boolean };
   limits: { maxBufferSize: number };
 }
-const isPhone = () => matchMedia('(pointer: coarse)').matches;
+
+/** Free the space used by earlier Masterpiece+ engines. */
+function dropOldCaches() {
+  OLD_CACHES.forEach((c) => caches.delete(c).catch(() => {}));
+}
 
 export async function mpInstalled(): Promise<boolean> {
   try {
@@ -76,6 +59,7 @@ export async function mpInstalled(): Promise<boolean> {
 
 export async function mpRemove() {
   await caches.delete(CACHE).catch(() => {});
+  dropOldCaches();
   sessions = null;
 }
 
@@ -108,10 +92,10 @@ function runWorker(req: object, onProgress: Progress): Promise<ArrayBuffer | nul
 
 /** Download everything for offline use (no GPU work). */
 export async function mpDownload(onProgress: Progress) {
+  dropOldCaches();
   await runWorker({ base: BASE, key: 'w16', chunks: CHUNKS, cacheName: CACHE, downloadOnly: true }, onProgress);
-  // Warm the small files into the cache too.
   const c = await caches.open(CACHE);
-  await Promise.all([GRAPH.fp16, GRAPH.fp32, 'vae_decoder.onnx', 'lineart.onnx'].map(async (f) => (await c.match(BASE + f)) || c.add(BASE + f).catch(() => {})));
+  await Promise.all(['graph.f16.onnx', 'vae_encoder.onnx', 'vae_decoder.onnx'].map(async (f) => (await c.match(BASE + f)) || c.add(BASE + f).catch(() => {})));
 }
 
 let ortP: Promise<typeof ORT> | null = null;
@@ -144,7 +128,7 @@ async function cachedBytes(file: string) {
   }
 }
 
-let sessions: { unet: ORT.InferenceSession; dec: ORT.InferenceSession; lines: ORT.InferenceSession } | null = null;
+let sessions: { unet: ORT.InferenceSession; enc: ORT.InferenceSession; dec: ORT.InferenceSession } | null = null;
 let loading: Promise<void> | null = null;
 
 export const mpReady = () => !!sessions;
@@ -154,81 +138,57 @@ export function mpLoad(onProgress: Progress = () => {}): Promise<void> {
   loading ??= (async () => {
     const sup = await mpSupport();
     if (!sup.ok) throw new Error(sup.reason);
+    dropOldCaches();
     const ort = await getOrt();
-    const key = sup.precision === 'fp16' ? 'w16' : 'w32';
-    const weights = await runWorker({ base: BASE, key, chunks: CHUNKS, cacheName: CACHE }, onProgress);
+    const weights = await runWorker({ base: BASE, key: 'w16', chunks: CHUNKS, cacheName: CACHE }, onProgress);
     onProgress('compile', 0);
-    caches.open(CACHE).then((c) => STALE.forEach((f) => c.delete(BASE + f))).catch(() => {});
-    const graph = await cachedBytes(GRAPH[sup.precision === 'fp16' ? 'fp16' : 'fp32']);
     const opts: ORT.InferenceSession.SessionOptions = { executionProviders: ['webgpu'], graphOptimizationLevel: 'all' };
-    const unet = await ort.InferenceSession.create(graph, { ...opts, externalData: [{ path: 'w', data: new Uint8Array(weights!) }] });
-    onProgress('compile', 0.8);
+    const unet = await ort.InferenceSession.create(await cachedBytes('graph.f16.onnx'), { ...opts, externalData: [{ path: 'w', data: new Uint8Array(weights!) }] });
+    onProgress('compile', 0.85);
+    const enc = await ort.InferenceSession.create(await cachedBytes('vae_encoder.onnx'), opts);
     const dec = await ort.InferenceSession.create(await cachedBytes('vae_decoder.onnx'), opts);
-    onProgress('compile', 0.9);
-    // Learned line‑art extractor ("Informative Drawings"): clean, artist‑like outlines
-    // make the painter follow the photo's composition and faces far more closely.
-    const lines = await ort.InferenceSession.create(await cachedBytes('lineart.onnx'), opts);
     onProgress('compile', 1);
-    sessions = { unet, dec, lines };
+    sessions = { unet, enc, dec };
   })();
   loading.catch(() => (loading = null));
   return loading;
 }
 
-// ── per‑style prompt embeddings (precomputed with CLIP at build time) ──
+// ── per‑style prompt embeddings (CLIP, precomputed at build time; style‑only, scene‑neutral) ──
 const embCache = new Map<string, Promise<Float32Array>>();
-function styleEmbedding(style: string, subject: Subject): Promise<Float32Array> {
-  const k = `${style}|${subject}`;
-  let p = embCache.get(k);
+function styleEmbedding(style: string): Promise<Float32Array> {
+  let p = embCache.get(style);
   if (!p) {
     p = (async () => {
-      const idx = SUBJECTS.findIndex((s) => s.id === subject);
-      const bytes = await cachedBytes(`emb2/${style}.bin`);
-      const per = 77 * 768;
-      const h = new Uint16Array(bytes.buffer, bytes.byteOffset + idx * per * 2, per);
-      const out = new Float32Array(per);
-      for (let i = 0; i < per; i++) {
+      const bytes = await cachedBytes(`emb/${style}.bin`);
+      const h = new Uint16Array(bytes.buffer, bytes.byteOffset, 77 * 768);
+      const out = new Float32Array(h.length);
+      for (let i = 0; i < h.length; i++) {
         const v = h[i];
         const s = v & 0x8000 ? -1 : 1, e = (v >> 10) & 0x1f, m = v & 0x3ff;
         out[i] = e === 0 ? s * 2 ** -14 * (m / 1024) : s * 2 ** (e - 15) * (1 + m / 1024);
       }
       return out;
     })();
-    embCache.set(k, p);
+    embCache.set(style, p);
   }
   return p;
 }
 
-function gaussian(seed: number, n: number) {
-  let s = seed >>> 0 || 1;
-  const rnd = () => {
-    s ^= s << 13; s >>>= 0; s ^= s >>> 17; s ^= s << 5; s >>>= 0;
-    return (s + 0.5) / 4294967296;
-  };
-  const out = new Float32Array(n);
-  for (let i = 0; i < n; i += 2) {
-    const u = rnd(), v = rnd();
-    const r = Math.sqrt(-2 * Math.log(u));
-    out[i] = r * Math.cos(2 * Math.PI * v);
-    if (i + 1 < n) out[i + 1] = r * Math.sin(2 * Math.PI * v);
-  }
-  return out;
-}
-
 export interface PaintOptions {
   style: string;
-  subject: Subject;
-  /** 0.5..1 — how closely to follow the photo's lines. */
-  fidelity: number;
+  /** 0.3 (faithful to the photo) … 0.7 (artistic freedom). */
+  strength: number;
   keepColors: boolean;
   seed: number;
+  onStep?: (i: number, n: number) => void;
 }
 
 /** Repaint a photo. Returns a canvas at ~2× the model resolution. */
 export async function mpPaint(photo: HTMLCanvasElement, o: PaintOptions): Promise<HTMLCanvasElement> {
   if (!sessions) throw new Error('Masterpiece+ is not loaded');
   const ort = await getOrt();
-  const { unet, dec } = sessions;
+  const { unet, enc, dec } = sessions;
   const s = SIDE / Math.max(photo.width, photo.height);
   const W = Math.max(256, Math.round((photo.width * s) / 64) * 64), H = Math.max(256, Math.round((photo.height * s) / 64) * 64);
   const small = document.createElement('canvas');
@@ -237,42 +197,37 @@ export async function mpPaint(photo: HTMLCanvasElement, o: PaintOptions): Promis
   const sctx = small.getContext('2d', { willReadFrequently: true })!;
   sctx.imageSmoothingQuality = 'high';
   sctx.drawImage(photo, 0, 0, W, H);
-  // Photo → line drawing (1 = paper, 0 = ink).
   const px = sctx.getImageData(0, 0, W, H).data;
   const plane = W * H;
   const rgb = new Float32Array(3 * plane);
   for (let i = 0; i < plane; i++) {
-    rgb[i] = px[i * 4] / 255;
-    rgb[plane + i] = px[i * 4 + 1] / 255;
-    rgb[2 * plane + i] = px[i * 4 + 2] / 255;
+    rgb[i] = px[i * 4] / 127.5 - 1;
+    rgb[plane + i] = px[i * 4 + 1] / 127.5 - 1;
+    rgb[2 * plane + i] = px[i * 4 + 2] / 127.5 - 1;
   }
-  const lr = await sessions.lines.run({ image: new ort.Tensor('float32', rgb, [1, 3, H, W]) });
-  const lines = (await lr.lines.getData()) as Float32Array;
-  Object.values(lr).forEach((t) => t.dispose?.());
-  const cond = new Float32Array(3 * plane);
-  for (let i = 0; i < plane; i++) {
-    const v = Math.min(1, Math.max(0, lines[i]));
-    cond[i] = v;
-    cond[plane + i] = v;
-    cond[2 * plane + i] = v;
-  }
+  const er = await enc.run({ image: new ort.Tensor('float32', rgb, [1, 3, H, W]) });
+  const init = (await er.latent.getData()) as Float32Array;
+  Object.values(er).forEach((t) => t.dispose?.());
 
   const lh = H / 8, lw = W / 8;
-  const x = gaussian(o.seed, 4 * lh * lw);
-  const emb = await styleEmbedding(o.style, o.subject);
-  const feeds = {
-    sample: new ort.Tensor('float32', x, [1, 4, lh, lw]),
-    timestep: new ort.Tensor('int64', BigInt64Array.from([999n]), [1]),
-    emb: new ort.Tensor('float32', emb, [1, 77, 768]),
-    cond: new ort.Tensor('float32', cond, [1, 3, H, W]),
-    cscale: new ort.Tensor('float32', Float32Array.from([o.fidelity]), [1]),
-  };
-  const r = await unet.run(feeds);
-  const eps = (await r.eps.getData()) as Float32Array;
-  const a = Math.sqrt(AC999), b = Math.sqrt(1 - AC999);
-  const z = new Float32Array(x.length);
-  for (let i = 0; i < z.length; i++) z[i] = (x[i] - b * eps[i]) / a;
-  Object.values(r).forEach((t) => t.dispose?.());
+  const emb = new ort.Tensor('float32', await styleEmbedding(o.style), [1, 77, 768]);
+  const z = await lcmImg2Img({
+    init,
+    strength: Math.min(0.75, Math.max(0.25, o.strength)),
+    steps: STEPS,
+    seed: o.seed,
+    onStep: o.onStep,
+    unet: async (x, t) => {
+      const r = await unet.run({
+        sample: new ort.Tensor('float32', x, [1, 4, lh, lw]),
+        timestep: new ort.Tensor('int64', BigInt64Array.from([BigInt(t)]), [1]),
+        emb,
+      });
+      const eps = (await r.eps.getData()) as Float32Array;
+      Object.values(r).forEach((tt) => tt.dispose?.());
+      return eps;
+    },
+  });
   const d = await dec.run({ latent: new ort.Tensor('float32', z, [1, 4, lh, lw]) });
   const img = (await d.image.getData()) as Float32Array;
   Object.values(d).forEach((t) => t.dispose?.());
