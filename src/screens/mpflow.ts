@@ -4,6 +4,19 @@ import { haptic, toast } from '../ui/fx';
 import { openSheet } from '../ui/sheet';
 import { MP_DOWNLOAD_MB, mpDownload, mpInstalled, mpSupport } from '../ai/masterpiece';
 
+/** Browsers charge cached files above their raw size; leave generous headroom. */
+async function storageRoom() {
+  try {
+    await navigator.storage?.persist?.();
+    const e = await navigator.storage?.estimate?.();
+    if (!e?.quota) return { ok: true, freeMB: Infinity };
+    const freeMB = ((e.quota - (e.usage ?? 0)) / 1e6) | 0;
+    return { ok: freeMB > MP_DOWNLOAD_MB * 1.6, freeMB };
+  } catch {
+    return { ok: true, freeMB: Infinity };
+  }
+}
+
 /**
  * Make sure Masterpiece+ can run here and its painter is on the device.
  * Shows a one‑time download sheet. Resolves true when ready to paint.
@@ -45,6 +58,9 @@ export async function ensureMpInstalled(): Promise<boolean> {
       later,
     );
     const close = openSheet(content, { onClose: () => finish(false) });
+    void storageRoom().then((r) => {
+      if (!r.ok) status.textContent = `Only ~${r.freeMB} MB of browser storage is available, so the painter may not stay offline (it would re‑download). Private tabs have less space.`;
+    });
     later.addEventListener('click', () => close());
     go.addEventListener('click', async () => {
       haptic(10);
@@ -56,7 +72,9 @@ export async function ensureMpInstalled(): Promise<boolean> {
           bar.style.setProperty('--p', String(p));
           status.textContent = `Downloading the painter… ${Math.round(p * 100)}%`;
         });
-        status.textContent = 'Ready. The painter now lives on this device.';
+        status.textContent = (await mpInstalled())
+          ? 'Ready. The painter now lives on this device.'
+          : 'Ready — but your browser didn’t allow enough storage to keep it offline, so it will download again next time.';
         haptic([10, 40, 20]);
         settled = true;
         resolve(true);

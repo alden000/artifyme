@@ -84,7 +84,7 @@ async function getChunk(cache: Cache | null, url: string, onBytes: (n: number) =
     buf.set(p, o);
     o += p.byteLength;
   }
-  if (cache) await cache.put(url, new Response(buf, { headers: { 'content-type': 'application/octet-stream' } })).catch(() => {});
+  if (cache) await cache.put(url, new Response(buf, { headers: { 'content-type': 'application/octet-stream' } })).catch((e) => console.warn('Masterpiece+: could not cache', url, e));
   return buf;
 }
 
