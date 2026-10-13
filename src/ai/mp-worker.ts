@@ -67,7 +67,7 @@ async function getChunk(cache: Cache | null, url: string, onBytes: (n: number) =
   }
   const res = await fetch(url);
   if (!res.ok || !res.body) throw new Error(`Download failed (${res.status})`);
-  const len = Number(res.headers.get('content-length')) || 0;
+  // Don't trust content-length: Pages gzips responses, so it's the *compressed* size.
   const parts: Uint8Array[] = [];
   const reader = res.body.getReader();
   let got = 0;
@@ -78,7 +78,7 @@ async function getChunk(cache: Cache | null, url: string, onBytes: (n: number) =
     got += value.byteLength;
     onBytes(value.byteLength);
   }
-  const buf = new Uint8Array(len || got);
+  const buf = new Uint8Array(got);
   let o = 0;
   for (const p of parts) {
     buf.set(p, o);
