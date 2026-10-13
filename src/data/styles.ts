@@ -1,4 +1,6 @@
 import bottlenecks from './bottlenecks.json';
+import palettes from './palettes.json';
+import { DEFAULT_FINISH, type Finish, type Palette, type Surface } from '../ai/finish';
 
 export type StyleKind = 'neural' | 'procedural';
 export type Procedural = 'minecraft' | 'arcade' | 'bricks';
@@ -16,7 +18,40 @@ export interface ArtStyle {
   /** 100‑d style embedding (neural styles). */
   bottleneck?: number[];
   procedural?: Procedural;
+  /** Painterly finishing recipe (neural styles). */
+  finish?: Finish;
+  /** Lab colour statistics of the reference artwork. */
+  palette?: Palette;
 }
+
+// brush size · impasto · ground · palette pull — tuned per artwork.
+// Values are relative intensities; the scaling keeps the finish restrained — heavier
+// settings tested worse (mushy faces, palette forcing drains skin tones).
+const F = (brush: number, impasto: number, surface: Surface, colorMatch: number): Finish => ({ brush: brush * 0.5, impasto: impasto * 0.4, surface, colorMatch: colorMatch * 0.25 });
+const FINISH: Record<string, Finish> = {
+  starry: F(1, 1, 'canvas', 0.6),
+  wave: F(0.45, 0, 'paper', 0.7),
+  kiss: F(0.6, 0.45, 'canvas', 0.65),
+  scream: F(0.9, 0.45, 'canvas', 0.6),
+  sunflowers: F(1, 1, 'canvas', 0.6),
+  kandinsky: F(0.75, 0.55, 'canvas', 0.5),
+  monet: F(1, 0.7, 'canvas', 0.65),
+  lilies: F(1, 0.6, 'canvas', 0.6),
+  gris: F(0.5, 0.3, 'canvas', 0.55),
+  mondrian: F(0.3, 0.2, 'canvas', 0.35),
+  seurat: F(0.35, 0.35, 'canvas', 0.55),
+  mucha: F(0.5, 0, 'paper', 0.6),
+  marc: F(0.8, 0.5, 'canvas', 0.5),
+  cypress: F(1, 1, 'canvas', 0.6),
+  schiele: F(0.6, 0.2, 'paper', 0.5),
+  hiroshige: F(0.45, 0, 'paper', 0.7),
+  rousseau: F(0.7, 0.4, 'canvas', 0.55),
+  rembrandt: F(0.85, 0.6, 'canvas', 0.7),
+  vermeer: F(0.8, 0.4, 'canvas', 0.6),
+  davinci: F(0.6, 0.3, 'panel', 0.7),
+  bosch: F(0.6, 0.3, 'panel', 0.6),
+};
+const pal = palettes as unknown as Record<string, Palette>;
 
 const vec = bottlenecks as Record<string, number[]>;
 
@@ -39,6 +74,8 @@ const neural = (
   blurb,
   thumb: `styles/${id}.webp`,
   bottleneck: vec[id],
+  finish: FINISH[id] ?? DEFAULT_FINISH,
+  palette: pal[id],
 });
 
 export const MASTERS: ArtStyle[] = [

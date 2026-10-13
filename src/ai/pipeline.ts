@@ -1,13 +1,16 @@
 import type { ArtStyle } from '../data/styles';
 import { fitSize, rasterize, stylizeCanvas } from './engine';
 import { renderProcedural } from './procedural';
+import { applyFinish, DEFAULT_FINISH } from './finish';
 
 export type Quality = 'swift' | 'studio' | 'gallery';
 
-export const QUALITY: Record<Quality, { label: string; hint: string; maxSide: number; model: 'fast' | 'hq' }> = {
-  swift: { label: 'Swift', hint: '512px · fastest', maxSide: 512, model: 'fast' },
-  studio: { label: 'Studio', hint: '896px · balanced', maxSide: 896, model: 'hq' },
-  gallery: { label: 'Gallery', hint: '1280px · finest', maxSide: 1280, model: 'hq' },
+// The network paints at a modest size (bolder, more painterly strokes); the Atelier
+// finish then repaints & upscales to the final output size.
+export const QUALITY: Record<Quality, { label: string; hint: string; maxSide: number; nnSide: number; model: 'fast' | 'hq' }> = {
+  swift: { label: 'Swift', hint: '1024px · fastest', maxSide: 1024, nnSide: 448, model: 'fast' },
+  studio: { label: 'Studio', hint: '1600px · balanced', maxSide: 1600, nnSide: 640, model: 'hq' },
+  gallery: { label: 'Gallery', hint: '2048px · finest', maxSide: 2048, nnSide: 768, model: 'hq' },
 };
 
 export interface RenderSettings {
@@ -18,9 +21,11 @@ export interface RenderSettings {
   preserveColor: boolean;
   /** 0..1 — block/pixel density for Pixel Worlds. */
   detail: number;
+  /** Painterly post‑process: brushstrokes, palette, impasto, canvas. */
+  finish: boolean;
 }
 
-export const DEFAULT_SETTINGS: RenderSettings = { quality: 'studio', intensity: 1, preserveColor: false, detail: 0.55 };
+export const DEFAULT_SETTINGS: RenderSettings = { quality: 'studio', intensity: 1, preserveColor: false, detail: 0.55, finish: true };
 
 function transferColor(stylized: HTMLCanvasElement, original: HTMLCanvasElement) {
   const w = stylized.width, h = stylized.height;
@@ -69,9 +74,21 @@ export async function renderStyle(
     return blendWithOriginal(out, src, settings.intensity);
   }
   const q = QUALITY[settings.quality];
-  const size = fitSize(sw, sh, opts.maxSide ?? q.maxSide);
-  const content = rasterize(src, size.width, size.height);
-  const out = await stylizeCanvas(content, style.bottleneck!, opts.model ?? q.model);
-  if (settings.preserveColor) transferColor(out, content);
-  return blendWithOriginal(out, content, settings.intensity);
+  const outSide = opts.maxSide ?? q.maxSide;
+  if (settings.finish === false) {
+    const size = fitSize(sw, sh, Math.min(outSide, 1280));
+    const content = rasterize(src, size.width, size.height);
+    const out = await stylizeCanvas(content, style.bottleneck!, opts.model ?? q.model);
+    if (settings.preserveColor) transferColor(out, content);
+    return blendWithOriginal(out, content, settings.intensity);
+  }
+  const nn = fitSize(sw, sh, Math.min(outSide, q.nnSide));
+  const content = rasterize(src, nn.width, nn.height);
+  const styled = await stylizeCanvas(content, style.bottleneck!, opts.model ?? q.model);
+  if (settings.preserveColor) transferColor(styled, content);
+  // Final size: the quality target, but never more than ~1.5× the source's own pixels.
+  const out = fitSize(sw, sh, Math.max(nn.width, nn.height, Math.min(outSide, Math.max(sw, sh) * 1.5)), 2);
+  const photo = rasterize(src, out.width, out.height);
+  const painted = applyFinish(styled, photo, out.width, out.height, style.finish ?? DEFAULT_FINISH, settings.preserveColor ? null : (style.palette ?? null));
+  return blendWithOriginal(painted, photo, settings.intensity);
 }

@@ -2,6 +2,7 @@
 // Only the tiny embedding + a thumbnail are kept, locally.
 import type { ArtStyle } from '../data/styles';
 import { styleBottleneck } from '../ai/engine';
+import { DEFAULT_FINISH, imagePalette } from '../ai/finish';
 
 const KEY = 'artifyme.custom-styles';
 const MAX = 8;
@@ -43,6 +44,8 @@ export async function createCustomStyle(art: HTMLCanvasElement, existing: ArtSty
     accent: '#d8b26e',
     thumb: t.toDataURL('image/jpeg', 0.82),
     bottleneck: bottleneck.map((v) => +v.toFixed(5)),
+    finish: DEFAULT_FINISH,
+    palette: imagePalette(art),
   };
   const list = [style, ...existing].slice(0, MAX);
   persist(list);

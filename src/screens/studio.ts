@@ -200,6 +200,16 @@ export default function studio(root: HTMLElement) {
     if (s.kind === 'neural') {
       kids.push(
         toggle({
+          label: 'Atelier finish',
+          hint: 'Brushstrokes, the artist’s palette, paint relief & canvas',
+          value: state.settings.finish !== false,
+          onChange: (v) => {
+            state.settings.finish = v;
+            persistSettings();
+            schedulePreview(0);
+          },
+        }),
+        toggle({
           label: 'Keep original colours',
           hint: 'Borrow only the brushwork & texture',
           value: state.settings.preserveColor,

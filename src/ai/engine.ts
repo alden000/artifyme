@@ -113,9 +113,14 @@ export async function stylizeCanvas(content: HTMLCanvasElement, bottleneck: numb
   const tf = await getTf();
   const net = await loadModel(model);
   const result = tf.tidy(() => {
-    const img = tf.browser.fromPixels(content).toFloat().div(255).expandDims(0);
+    const img = tf.browser.fromPixels(content).toFloat().div(255).expandDims(0) as TF.Tensor4D;
+    // Mirror‑pad so the network's zero‑padding doesn't burn a dark frame into the edges.
+    const pad = Math.round(Math.min(content.width, content.height) * 0.04 / 4) * 4 + 8;
+    const padded = tf.mirrorPad(img, [[0, 0], [pad, pad], [pad, pad], [0, 0]], 'reflect');
     const b = tf.tensor4d(bottleneck, [1, 1, 1, 100]);
-    const y = (net.predict([img, b]) as TF.Tensor4D).squeeze([0]) as TF.Tensor3D;
+    const full = (net.predict([padded, b]) as TF.Tensor4D).squeeze([0]) as TF.Tensor3D;
+    const sy = Math.round((full.shape[0] - content.height) / 2), sx = Math.round((full.shape[1] - content.width) / 2);
+    const y = full.slice([Math.max(0, sy), Math.max(0, sx), 0], [Math.min(content.height, full.shape[0]), Math.min(content.width, full.shape[1]), 3]);
     // Model output can be a few pixels off for odd sizes; snap back to the input size.
     const fixed = y.shape[0] !== content.height || y.shape[1] !== content.width ? tf.image.resizeBilinear(y, [content.height, content.width]) : y;
     return fixed.clipByValue(0, 1) as TF.Tensor3D;
