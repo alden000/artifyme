@@ -132,8 +132,8 @@ export default function studio(root: HTMLElement) {
         label: 'Faithful ↔ Artistic',
         value: state.mp.strength,
         min: 0.25,
-        max: 0.6,
-        format: (v) => (v < 0.33 ? 'Faithful' : v < 0.45 ? 'Balanced' : 'Artistic'),
+        max: 0.65,
+        format: (v) => (v < 0.35 ? 'Faithful' : v < 0.5 ? 'Balanced' : 'Artistic'),
         onInput: (v) => {
           state.mp.strength = v;
           persistSettings();
@@ -141,7 +141,7 @@ export default function studio(root: HTMLElement) {
       }),
       toggle({
         label: 'Protect people',
-        hint: 'Repaints people & pets separately so they stay recognisable',
+        hint: 'People & pets are painted a little more gently so they stay recognisable',
         value: state.mp.protectPeople,
         onChange: (v) => {
           state.mp.protectPeople = v;

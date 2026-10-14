@@ -6,6 +6,7 @@ import { go } from '../router';
 import { setMedia, setResult, state } from '../state';
 import { loadMedia } from '../media/load';
 import { listCreations, type Creation } from '../store/gallery';
+import { mpRelease } from '../ai/masterpiece';
 import { openViewer } from './viewer';
 
 export async function ingest(file: File | null) {
@@ -29,6 +30,7 @@ export async function ingest(file: File | null) {
 const FEATURED = ['starry', 'kiss', 'wave'];
 
 export default function home(root: HTMLElement) {
+  mpRelease(); // done painting for now: give the phone its memory back
   setAccent('#c9a25a');
   const featured = FEATURED.map((id) => MASTERS.find((m) => m.id === id)!);
 

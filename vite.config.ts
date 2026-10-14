@@ -8,6 +8,8 @@ export default defineConfig({
     target: 'es2020',
     chunkSizeWarningLimit: 2000,
   },
+  // The engine worker lazy‑loads onnxruntime, which needs code splitting.
+  worker: { format: 'es' },
   plugins: [
     VitePWA({
       registerType: 'prompt',

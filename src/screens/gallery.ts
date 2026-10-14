@@ -3,9 +3,11 @@ import { icons } from '../ui/icons';
 import { back } from '../router';
 import { listCreations, listeners, type Creation } from '../store/gallery';
 import { openViewer } from './viewer';
+import { mpRelease } from '../ai/masterpiece';
 import { ingest } from './home';
 
 export default function gallery(root: HTMLElement) {
+  mpRelease(); // done painting for now: give the phone its memory back
   const grid = h('div', { class: 'masonry' });
   const count = h('span', { class: 'muted' });
   const urls: string[] = [];

@@ -119,7 +119,8 @@ export async function runRender(): Promise<boolean> {
       const seed = state.mpSeed;
       const out = await mpPaint(media.still, {
         style: style.id,
-        strength: state.mp.strength,
+        // Reimagine styles (anime, cartoon…) only read as such with more freedom.
+        strength: state.mp.strength + (style.kind === 'generative' ? 0.1 : 0),
         keepColors: state.mp.keepColors,
         protectPeople: state.mp.protectPeople,
         seed,

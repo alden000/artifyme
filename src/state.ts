@@ -1,7 +1,7 @@
 import { ALL_STYLES, type ArtStyle } from './data/styles';
 
 export interface MpSettings {
-  /** img2img strength for the scene: 0.25 keeps the photo, 0.6 lets the artist take over. */
+  /** img2img strength for the scene: 0.25 keeps the photo, 0.65 lets the artist take over. */
   strength: number;
   keepColors: boolean;
   /** Repaint detected people & pets separately (crop, faithful) so they stay recognisable. */
