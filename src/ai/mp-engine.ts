@@ -12,8 +12,8 @@ import { lcmImg2Img } from './lcm';
 import { blendPatch, featherMask, fitSize, maskBox, maskIn, maskOutside, resizeMap, subjectBoxes, type Box } from './split';
 import { loadWeights } from './weights';
 
-// 640 px: small subjects (a child in a wide shot) survive far better than at 512,
-// without 768's ~7× attention memory on phone GPUs.
+// Up to 640 px: small subjects (a child in a wide shot) survive far better than at 512.
+// The real size is capped by the GPU, see sizeFor().
 const SIDE = 640;
 const STEPS = 4;
 /** People are repainted from a crop this big. */
@@ -78,8 +78,34 @@ async function cachedBytes(file: string) {
 
 let sessions: { unet: ORT.InferenceSession; enc: ORT.InferenceSession; dec: ORT.InferenceSession; seg: ORT.InferenceSession } | null = null;
 
+// The UNet's top‑level self‑attention holds an 8 heads × N × N fp16 score matrix
+// (N = latent pixels) in ONE GPU buffer. Past the device's per‑binding limit, phone
+// GPUs don't fail — they silently compute garbage attention and the painting comes
+// out as a smudge (seen on an S24 Ultra at 640 px: N = 4800 → 368 MB).
+let maxTokens = 2304; // 288×512 — known good everywhere we've tried
+
+async function readGpuBudget() {
+  const gpu = (navigator as Navigator & { gpu?: { requestAdapter(o?: unknown): Promise<{ limits: { maxStorageBufferBindingSize: number } } | null> } }).gpu;
+  const a = await gpu?.requestAdapter({ powerPreference: 'high-performance' }).catch(() => null);
+  const bind = a?.limits.maxStorageBufferBindingSize;
+  // 4096 (512×512) is the most we've seen paint correctly on a phone.
+  if (bind) maxTokens = Math.min(4096, Math.floor(Math.sqrt((bind * 0.9) / 16)));
+  console.info('Masterpiece+: binding limit', bind, '→ max latent tokens', maxTokens);
+}
+
+/** Model size (multiples of 64) for a w×h image: long side ≤ side, and within the GPU budget. */
+export function sizeFor(w: number, h: number, side: number) {
+  for (let s = side; s >= 192; s -= 32) {
+    const k = s / Math.max(w, h);
+    const W = Math.max(128, Math.round((w * k) / 64) * 64), H = Math.max(128, Math.round((h * k) / 64) * 64);
+    if ((W / 8) * (H / 8) <= maxTokens) return { w: W, h: H };
+  }
+  return w >= h ? { w: 256, h: 128 } : { w: 128, h: 256 };
+}
+
 export async function load(cfg: EngineConfig, onProgress: LoadProgress) {
   if (sessions) return;
+  await readGpuBudget();
   BASE = cfg.base;
   CACHE = cfg.cacheName;
   const ort = await getOrt();
@@ -205,8 +231,7 @@ async function subjectMask(photo: ImageBitmap, W: number, H: number) {
 /** Repaint a photo at model resolution (≤ 640 px; the caller upscales). */
 export async function paint(photo: ImageBitmap, o: PaintOptions, cb: PaintCallbacks = {}): Promise<ImageData> {
   if (!sessions) throw new Error('Masterpiece+ is not loaded');
-  const s = SIDE / Math.max(photo.width, photo.height);
-  const W = Math.max(256, Math.round((photo.width * s) / 64) * 64), H = Math.max(256, Math.round((photo.height * s) / 64) * 64);
+  const { w: W, h: H } = sizeFor(photo.width, photo.height, SIDE);
   const src = grab(photo, W, H);
 
   // Find people first so progress can be split between the passes.
@@ -220,7 +245,7 @@ export async function paint(photo: ImageBitmap, o: PaintOptions, cb: PaintCallba
     try {
       mask = await subjectMask(photo, W, H);
       // Only worth it when the crop gets ≥1.3× the scene's pixels per side.
-      boxes = subjectBoxes(mask, W, H, PEOPLE_SIDE / 1.3);
+      boxes = subjectBoxes(mask, W, H, sizeFor(1, 1, PEOPLE_SIDE).w / 1.3);
       rest = maskOutside(mask, W, boxes);
       restBox = maskBox(rest, W, H);
     } catch (e) {
@@ -247,7 +272,7 @@ export async function paint(photo: ImageBitmap, o: PaintOptions, cb: PaintCallba
     const bw = box.x1 - box.x0, bh = box.y1 - box.y0;
     // Crop from the full‑resolution photo for the most detail.
     const sx = photo.width / W, sy = photo.height / H;
-    const fit = fitSize(bw * sx, bh * sy, PEOPLE_SIDE);
+    const fit = sizeFor(bw * sx, bh * sy, PEOPLE_SIDE);
     const crop = grab(photo, fit.w, fit.h, box.x0 * sx, box.y0 * sy, bw * sx, bh * sy);
     const painted = await img2img(crop, o.style, faithful, o.seed, step);
     pass++;
